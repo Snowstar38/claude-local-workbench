@@ -13,7 +13,7 @@ machine and go nowhere else; the only thing the page ever contacts is
 > [direct browser access](https://docs.anthropic.com/) header. "Workbench" here
 > is used as a plain word for a place you work, nothing more.
 
-## Security — read this first
+## Security
 
 - **Your API key is stored in the browser's `localStorage`** for whatever
   address you open the app on, and sent only to `api.anthropic.com`. Use the app
