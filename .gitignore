@@ -1,0 +1,13 @@
+# Never commit keys, personal data, or local workbench saves.
+*.txt
+!requirements.txt
+*key*
+workbench-data*.json
+workbench-backup-*.json
+friendship-addendum.json
+*.zip
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
+__pycache__/

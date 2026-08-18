@@ -1,0 +1,3130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The page loads zero external resources, so the policy can be this tight.
+     connect-src is the load-bearing line: even if an injection bug were ever
+     introduced, the stored API key could not be sent anywhere but Anthropic. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src https://api.anthropic.com; form-action 'none'; base-uri 'none'">
+<title>Workbench</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Theme tokens. Light is the base; dark is a token swap under
+   prefers-color-scheme, plus an explicit override via <html data-theme>.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:#faf9f7; --panel:#ffffff; --panel-2:#f3f1ed; --panel-3:#eae7e1;
+  --border:#e3dfd7; --border-strong:#cfc9be;
+  --text:#22201d; --muted:#6d675f; --faint:#948d84;
+  --accent:#b5613a; --accent-soft:#f0e2da; --accent-text:#8d4526;
+  --danger:#a3251c; --danger-soft:#f6e3e1;
+  --ok:#3d6b45;
+  --shadow:0 1px 2px rgba(40,32,24,.06), 0 6px 20px rgba(40,32,24,.06);
+  --radius:10px;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161513; --panel:#1e1d1a; --panel-2:#25231f; --panel-3:#2e2b26;
+    --border:#34312b; --border-strong:#484339;
+    --text:#ece8e2; --muted:#9d968c; --faint:#7c756b;
+    --accent:#d97757; --accent-soft:#3a2a22; --accent-text:#e79070;
+    --danger:#e0796d; --danger-soft:#3a2320;
+    --ok:#8fbf98;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161513; --panel:#1e1d1a; --panel-2:#25231f; --panel-3:#2e2b26;
+  --border:#34312b; --border-strong:#484339;
+  --text:#ece8e2; --muted:#9d968c; --faint:#7c756b;
+  --accent:#d97757; --accent-soft:#3a2a22; --accent-text:#e79070;
+  --danger:#e0796d; --danger-soft:#3a2320;
+  --ok:#8fbf98;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit; color:inherit}
+::selection{background:var(--accent-soft)}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+#app{
+  display:grid; height:100vh;
+  grid-template-columns:var(--sb,264px) minmax(0,1fr) var(--vr,312px);
+  transition:grid-template-columns .16s ease;
+}
+body.no-sidebar #app{--sb:0px}
+body.no-rail #app{--vr:0px}
+#sidebar,#rail{
+  background:var(--panel); border-color:var(--border);
+  display:flex; flex-direction:column; min-width:0; overflow:hidden;
+}
+/* Each pane is pinned to its own column. Without this, hiding the sidebar with
+   display:none removes it from the grid and auto-placement slides #main into
+   column 1 — which is exactly the 0px-wide column we just collapsed, squeezing
+   the whole app into a sliver. Explicit placement makes hiding order-proof. */
+#sidebar{grid-column:1; border-right:1px solid var(--border)}
+#main{grid-column:2}
+#rail{grid-column:3; border-left:1px solid var(--border)}
+body.no-sidebar #sidebar,body.no-rail #rail{display:none}
+#main{display:flex; flex-direction:column; min-width:0; background:var(--bg)}
+
+/* ── Top bar ────────────────────────────────────────────────────────────── */
+#topbar{
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-bottom:1px solid var(--border); background:var(--panel);
+  flex:0 0 auto; min-width:0; overflow:hidden;
+}
+/* Controls keep their size; the title and the estimate are what give way, so
+   nothing can ever be squashed on top of anything else. */
+#topbar > .btn, #topbar > #keyState{flex:0 0 auto}
+#topRunSlot{display:flex; align-items:center; gap:8px; min-width:0}
+#topRunSlot:empty{display:none}
+#chatTitle{
+  flex:1 1 120px; min-width:60px; font-size:15px; font-weight:600; padding:5px 8px;
+  background:transparent; border:1px solid transparent; border-radius:8px;
+  text-overflow:ellipsis;
+}
+#chatTitle:hover{border-color:var(--border)}
+#chatTitle:focus{outline:none; border-color:var(--accent); background:var(--bg)}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex; align-items:center; gap:6px; justify-content:center;
+  padding:6px 11px; border-radius:8px; border:1px solid var(--border-strong);
+  background:var(--panel); cursor:pointer; white-space:nowrap;
+  transition:background .12s ease, border-color .12s ease, opacity .12s ease;
+}
+.btn:hover:not(:disabled){background:var(--panel-2)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600}
+.btn.primary:hover:not(:disabled){filter:brightness(1.06); background:var(--accent)}
+.btn.ghost{border-color:transparent; background:transparent}
+.btn.ghost:hover:not(:disabled){background:var(--panel-2)}
+.btn.danger{color:var(--danger); border-color:var(--border)}
+.btn.danger:hover:not(:disabled){background:var(--danger-soft)}
+.btn.sm{padding:3px 8px; font-size:12.5px; border-radius:7px}
+.btn.icon{padding:5px 8px; border-color:transparent; background:transparent; color:var(--muted)}
+.btn.icon:hover:not(:disabled){background:var(--panel-2); color:var(--text)}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sb-head{
+  display:flex; align-items:center; gap:6px; padding:10px 10px 8px;
+  border-bottom:1px solid var(--border);
+}
+.sb-head .brand{
+  flex:1; font-weight:650; letter-spacing:.2px; font-size:14px;
+  display:flex; align-items:center; gap:7px;
+}
+.dot{width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto}
+#chatList{flex:1; overflow-y:auto; padding:6px}
+.chat-item{
+  display:flex; align-items:center; gap:6px; padding:7px 8px; border-radius:8px;
+  cursor:pointer; border:1px solid transparent;
+}
+.chat-item:hover{background:var(--panel-2)}
+.chat-item.active{background:var(--accent-soft); border-color:var(--border)}
+.chat-item .ci-body{flex:1; min-width:0}
+.chat-item .ci-name{
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:550;
+}
+.chat-item .ci-meta{font-size:11.5px; color:var(--faint); margin-top:1px}
+.chat-item .ci-acts{display:none; gap:2px}
+.chat-item:hover .ci-acts,.chat-item.active .ci-acts{display:flex}
+.sb-foot{padding:8px; border-top:1px solid var(--border); display:grid; gap:6px}
+.sync-state{font-size:11.5px; color:var(--faint); padding:1px 3px; cursor:pointer;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.sync-state.warn{color:var(--danger)}
+.sb-foot .row{display:flex; gap:6px}
+.sb-foot .row>*{flex:1}
+
+/* ── Editor column ──────────────────────────────────────────────────────── */
+/* ── Panes ──────────────────────────────────────────────────────────────────
+   #panes holds the conversation and (in split mode) the response side by side.
+   min-height:0 is what lets the children scroll instead of stretching #main.
+   No smooth scroll-behavior anywhere here: the completion follows the stream by
+   setting scrollTop directly, and smoothing turns that into a fight. */
+#panes{flex:1; display:flex; min-height:0; min-width:0}
+#scroller{flex:1 1 0; overflow-y:auto; overflow-x:hidden; min-width:0}
+#column{max-width:900px; margin:0 auto; padding:16px 20px 120px; display:grid; gap:14px}
+
+#responsePane{display:none; flex-direction:column; min-width:0; min-height:0;
+  background:var(--panel); border-left:1px solid var(--border)}
+#responseBody{flex:1 1 auto; overflow-y:auto; padding:14px 16px 40px; min-height:0}
+#responseBody #completion{border:0; border-radius:0; background:transparent}
+#responseBody .card-head{position:sticky; top:-14px; background:var(--panel); z-index:2}
+
+/* Split mode: conversation | response, each scrolling on its own. */
+body.split #responsePane{display:flex; flex:1 1 0}
+body.split #column{max-width:820px; padding-bottom:40px}
+/* The run controls live in the top bar here, so the sticky bottom bar goes. */
+body.split #runbar{
+  position:static; padding:0; border:0; background:transparent;
+  box-shadow:none; backdrop-filter:none; flex:0 0 auto; gap:8px;
+}
+body.split #runbar .spacer{display:none}
+body.split #runbar .note{order:-1; max-width:min(26vw,300px);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+body.split #runbar .btn{flex:0 0 auto}
+body.split #runbar .est{min-width:0; overflow:hidden; text-overflow:ellipsis}
+/* On a laptop-width window the top bar is tight, so the two most recoverable
+   things yield: the hint (which also appears on the message itself) and Save
+   version (Run snapshots anyway). The cost estimate stays. */
+@media (max-width:1240px){
+  body.split #runbar .note{display:none}
+  body.split #saveVersion{display:none}
+}
+body.split #stackedSlot{display:none}
+#respEmpty{color:var(--faint); font-size:13px; line-height:1.6; padding:6px 2px}
+
+.card{
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+.card-head{
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-bottom:1px solid var(--border); font-size:12px; font-weight:650;
+  letter-spacing:.04em; text-transform:uppercase; color:var(--muted);
+}
+.card-head .spacer{flex:1}
+
+/* Settings bar.
+   Flex, not an equal-width grid: the model select needs roughly twice the room
+   of a slider (ids like claude-opus-4-5-20251101 are long), and every field can
+   wrap to its own row rather than squeezing its neighbours. */
+#settingsBar{
+  display:flex; flex-wrap:wrap; align-items:end;
+  gap:14px 22px; padding:14px 16px;
+}
+.field{display:grid; gap:5px; min-width:0; flex:1 1 210px}
+.field.wide{flex:2.2 1 300px}       /* model picker */
+.field>label{font-size:11.5px; font-weight:650; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:6px}
+.field .hint{font-size:11.5px; color:var(--faint); text-transform:none; letter-spacing:0; font-weight:450}
+select,input[type=text],input[type=number],input[type=password]{
+  width:100%; min-width:0; padding:6px 8px; border-radius:8px;
+  border:1px solid var(--border-strong); background:var(--bg);
+}
+select{text-overflow:ellipsis}   /* long model ids degrade gracefully */
+select:focus,input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
+/* Slider + number pairs: the number box never shrinks and never gets closer
+   than 12px to the slider, so the thumb can't collide with it at any width. */
+.slider-row{display:flex; align-items:center; gap:12px}
+.slider-row input[type=range]{flex:1 1 80px; min-width:70px; accent-color:var(--accent)}
+.slider-row input[type=number]{flex:0 0 90px; width:90px; text-align:right}
+.disabled-field{opacity:.45; pointer-events:none}
+
+/* System prompt */
+#systemBox textarea{min-height:64px}
+textarea{
+  width:100%; display:block; resize:none; overflow:hidden;
+  padding:11px 13px; border:1px solid var(--border-strong); border-radius:8px;
+  background:var(--bg); line-height:1.62; font-size:14.5px;
+}
+#column .msg textarea{border-color:transparent; background:transparent; padding:10px 13px 12px}
+#column .msg textarea:focus{background:var(--bg)}
+
+/* Messages */
+.msg{
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+  overflow:hidden;
+}
+.msg.assistant{background:var(--panel-2)}
+.msg-head{display:flex; align-items:center; gap:6px; padding:6px 8px 4px}
+.roles{display:inline-flex; border:1px solid var(--border-strong); border-radius:7px; overflow:hidden}
+.roles button{
+  border:0; background:transparent; padding:3px 10px; cursor:pointer;
+  font-size:12px; font-weight:600; color:var(--muted);
+}
+.roles button.on{background:var(--accent-soft); color:var(--accent-text)}
+.msg-head .spacer{flex:1}
+.msg-head .tag{font-size:11px; color:var(--faint)}
+.thinkblock{
+  margin:2px 12px 0; border-left:2px solid var(--border-strong);
+  padding:2px 0 2px 10px; color:var(--muted); font-size:13px;
+}
+.thinkblock summary{cursor:pointer; color:var(--faint); font-size:11.5px;
+  letter-spacing:.03em; text-transform:uppercase; font-weight:650}
+.thinkblock .body{white-space:pre-wrap; margin-top:6px; font-style:italic}
+.addmsg{display:flex; gap:8px}
+.addmsg .btn{flex:1; border-style:dashed; color:var(--muted); padding:9px}
+
+/* Run bar */
+#runbar{
+  display:flex; align-items:center; gap:10px; padding:10px 12px;
+  position:sticky; bottom:0; z-index:5;
+  background:color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter:blur(8px);
+  border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);
+}
+#runbar .spacer{flex:1}
+#runbar .note{font-size:12px; color:var(--muted)}
+#runbar .note.warn{color:var(--danger)}
+#runbar .est{white-space:nowrap; font-variant-numeric:tabular-nums; cursor:help}
+#runbar .est:empty{display:none}
+
+/* Completion */
+#completion .out{padding:14px 16px; font-size:14.5px; line-height:1.68; white-space:pre-wrap; word-wrap:break-word}
+#completion .prefill{color:var(--faint)}
+#completion .empty{color:var(--faint); font-style:italic; white-space:normal}
+.meta-line{
+  display:flex; flex-wrap:wrap; gap:6px 14px; padding:8px 16px;
+  border-top:1px solid var(--border); font-size:12px; color:var(--muted);
+}
+/* Author display rules (like .pill's inline-block) silently defeat the
+   browser's [hidden] handling — this puts the attribute back in charge. */
+[hidden]{display:none !important}
+.pill{
+  display:inline-block; padding:1px 7px; border-radius:999px;
+  background:var(--panel-2); border:1px solid var(--border); font-size:11.5px;
+}
+.pill.warn{background:var(--danger-soft); border-color:var(--danger); color:var(--danger)}
+.blink::after{content:"▍"; color:var(--accent); animation:blink 1.1s steps(2,start) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ── Versions rail ──────────────────────────────────────────────────────── */
+.rail-head{display:flex; align-items:center; gap:6px; padding:10px 12px;
+  border-bottom:1px solid var(--border); font-size:12px; font-weight:650;
+  letter-spacing:.04em; text-transform:uppercase; color:var(--muted)}
+.rail-head .spacer{flex:1}
+#versionList{flex:1; overflow-y:auto; padding:8px}
+.ver{
+  border:1px solid var(--border); border-radius:9px; padding:8px 9px; margin-bottom:7px;
+  cursor:pointer; background:var(--panel);
+}
+.ver:hover{background:var(--panel-2)}
+.ver.active{border-color:var(--accent); background:var(--accent-soft)}
+.ver .v-top{display:flex; align-items:baseline; gap:6px}
+.ver .v-when{font-weight:600; font-size:12.5px}
+.ver .v-model{font-size:11px; color:var(--faint); margin-left:auto;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px}
+.ver .v-label{font-size:11.5px; color:var(--accent-text); margin-top:2px}
+.ver .v-prev{
+  font-size:12px; color:var(--muted); margin-top:4px; line-height:1.45;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.ver .v-foot{display:flex; align-items:center; gap:5px; margin-top:6px; font-size:11px; color:var(--faint)}
+.ver .v-acts{display:none; gap:4px; margin-left:auto}
+.ver:hover .v-acts,.ver.active .v-acts{display:flex}
+.empty-note{padding:16px 14px; color:var(--faint); font-size:13px; line-height:1.6}
+
+/* ── Banners / overlays ─────────────────────────────────────────────────── */
+#banners{position:fixed; top:12px; left:50%; transform:translateX(-50%);
+  z-index:60; display:grid; gap:8px; width:min(680px,92vw)}
+.banner{
+  border-radius:10px; padding:10px 12px; box-shadow:var(--shadow);
+  display:flex; gap:10px; align-items:flex-start; background:var(--panel);
+  border:1px solid var(--border-strong); font-size:13px;
+}
+.banner.err{background:var(--danger-soft); border-color:var(--danger)}
+.banner.ok{background:var(--panel); border-color:var(--ok)}
+.banner .b-body{flex:1; min-width:0}
+.banner .b-title{font-weight:650; margin-bottom:2px}
+.banner .b-msg{white-space:pre-wrap; word-break:break-word; color:var(--muted)}
+#dropzone{
+  position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+  background:color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter:blur(3px);
+}
+#dropzone.on{display:flex}
+#dropzone .inner{
+  border:2px dashed var(--accent); border-radius:16px; padding:36px 48px;
+  font-size:16px; font-weight:600; background:var(--panel); box-shadow:var(--shadow); text-align:center;
+}
+dialog{
+  border:1px solid var(--border-strong); border-radius:14px; background:var(--panel);
+  color:var(--text); padding:0; box-shadow:var(--shadow); width:min(560px,94vw);
+}
+dialog::backdrop{background:rgba(20,16,12,.42)}
+dialog .d-head{padding:14px 18px 0; font-size:16px; font-weight:650}
+dialog .d-body{padding:12px 18px; display:grid; gap:14px}
+dialog .d-foot{padding:12px 18px 16px; display:flex; gap:8px; justify-content:flex-end}
+.help{font-size:12.5px; color:var(--muted); line-height:1.55}
+code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
+  padding:1px 5px; border-radius:5px; border:1px solid var(--border)}
+.kbd{font-family:var(--mono); font-size:11px; border:1px solid var(--border-strong);
+  border-bottom-width:2px; border-radius:5px; padding:0 4px; color:var(--muted)}
+.sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+
+/* Narrow screens: the side panels start collapsed (decided once in JS, so the
+   ☰ and ⧉ buttons keep working at every width), and the top bar tightens up. */
+@media (max-width:820px){
+  #topbar{padding:6px 8px; gap:5px}
+  #topbar .btn.icon{padding:5px 7px}
+  #column{padding:12px 12px 120px}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ── Sidebar: chats + data actions ─────────────────────────────────── -->
+  <aside id="sidebar">
+    <div class="sb-head">
+      <div class="brand"><span class="dot"></span> Workbench</div>
+      <button class="btn sm" id="newChat" title="New chat (Ctrl+Shift+N)">＋ New</button>
+    </div>
+    <div id="chatList"></div>
+    <div class="sb-foot">
+      <div class="row">
+        <button class="btn sm" id="importBtn" title="Import prompts.json or an export .zip">Import export</button>
+        <button class="btn sm" id="settingsBtn">⚙ Settings</button>
+      </div>
+      <div class="row">
+        <button class="btn sm" id="exportAll" title="Download every chat and version as one JSON file">Back up all</button>
+        <button class="btn sm" id="restoreAll" title="Merge a backup JSON back in">Restore</button>
+      </div>
+      <div id="syncState" class="sync-state" hidden></div>
+    </div>
+  </aside>
+
+  <!-- ── Main editor ───────────────────────────────────────────────────── -->
+  <main id="main">
+    <header id="topbar">
+      <button class="btn icon" id="toggleSidebar" title="Toggle chat list">☰</button>
+      <input id="chatTitle" placeholder="Untitled chat" autocomplete="off" spellcheck="false">
+      <!-- In split mode the run controls are moved in here. -->
+      <span id="topRunSlot"></span>
+      <span id="keyState" class="pill"></span>
+      <button class="btn icon" id="toggleLayout" title="Split / stacked layout">▥</button>
+      <button class="btn icon" id="topSettingsBtn" title="Settings — API key, save file, theme">⚙</button>
+      <button class="btn icon" id="toggleRail" title="Toggle versions">⧉</button>
+    </header>
+
+    <div id="panes">
+    <div id="scroller">
+      <div id="column">
+
+        <section class="card" id="settingsCard">
+          <div id="settingsBar">
+            <div class="field wide">
+              <label for="modelSel">Model
+                <button class="btn icon sm" id="refreshModels" title="Reload the model list from the API">⟳</button>
+              </label>
+              <select id="modelSel"></select>
+            </div>
+            <div class="field">
+              <label for="maxTokNum">Max tokens <span class="hint" id="maxTokHint"></span></label>
+              <div class="slider-row">
+                <input type="range" id="maxTokRange" min="0" max="1000" step="1">
+                <input type="number" id="maxTokNum" min="1" max="200000" step="1">
+              </div>
+            </div>
+            <div class="field" id="tempField">
+              <label>
+                <input type="checkbox" id="tempOn" style="width:auto"> Temperature
+                <span class="hint" id="tempHint"></span>
+              </label>
+              <div class="slider-row">
+                <input type="range" id="tempRange" min="0" max="1" step="0.01">
+                <input type="number" id="tempNum" min="0" max="1" step="0.01">
+              </div>
+            </div>
+            <div class="field" id="effortField">
+              <label for="effortSel">Effort <span class="hint" id="effortHint"></span></label>
+              <select id="effortSel"></select>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="systemBox">
+          <div class="card-head">
+            <span>System prompt</span>
+            <span class="spacer"></span>
+            <span class="hint" id="sysHint" style="text-transform:none;letter-spacing:0;font-weight:450"></span>
+            <button class="btn ghost sm" id="sysToggle">hide</button>
+          </div>
+          <div style="padding:10px 12px" id="sysWrap">
+            <textarea id="sysText" spellcheck="false" placeholder="Optional. Sets the frame for the whole conversation."></textarea>
+          </div>
+        </section>
+
+        <section id="messages"></section>
+
+        <div class="addmsg">
+          <button class="btn" id="addUser">＋ Add user message</button>
+          <button class="btn" id="addAssistant">＋ Add assistant message</button>
+        </div>
+
+        <!-- The completion card lives here in stacked mode and is moved into
+             #responseBody in split mode; this slot keeps its place in order. -->
+        <div id="stackedSlot"></div>
+
+        <div id="runbar">
+          <button class="btn primary" id="runBtn">Run <span class="kbd" style="border-color:rgba(255,255,255,.5);color:#fff">Ctrl ↵</span></button>
+          <button class="btn" id="stopBtn" hidden>Stop</button>
+          <button class="btn" id="saveVersion" title="Snapshot the current state without running">Save version</button>
+          <span class="spacer"></span>
+          <span class="note est" id="estimate" hidden></span>
+          <span class="note" id="runNote"></span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right-hand Response pane (split mode only), scrolls independently. -->
+    <section id="responsePane">
+      <div id="responseBody">
+        <section class="card" id="completion" hidden>
+          <div class="card-head">
+            <span>Response</span>
+            <span class="spacer"></span>
+            <button class="btn sm" id="addToConv">Add to conversation</button>
+            <button class="btn sm" id="copyOut">Copy</button>
+          </div>
+          <div class="out" id="outBody"></div>
+          <div class="meta-line" id="outMeta" hidden></div>
+        </section>
+        <div id="respEmpty">Responses appear here. Press Run — the reply streams
+          into this pane, and every run is snapshotted in Versions.</div>
+      </div>
+    </section>
+    </div>
+  </main>
+
+  <!-- ── Versions rail ─────────────────────────────────────────────────── -->
+  <aside id="rail">
+    <div class="rail-head">
+      <span>Versions</span>
+      <span class="spacer"></span>
+      <span id="verCount" class="pill"></span>
+    </div>
+    <div id="versionList"></div>
+  </aside>
+</div>
+
+<div id="banners"></div>
+<div id="dropzone"><div class="inner">Drop <code>prompts.json</code>, an export <code>.zip</code>,<br>or a Workbench backup</div></div>
+
+<!-- ── Settings dialog ─────────────────────────────────────────────────── -->
+<dialog id="settingsDlg">
+  <div class="d-head">Settings
+    <span id="appVersion" style="float:right; font-weight:normal; font-size:12px; color:var(--faint)"></span>
+  </div>
+  <div class="d-body">
+    <div class="field">
+      <label for="apiKeyInput">Anthropic API key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+      <div class="help">
+        Stored only in this browser's <code>localStorage</code>, on this machine. It is sent
+        only to <code>api.anthropic.com</code>. Clearing site data clears the key.
+      </div>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="showKey" style="width:auto"> Show key</label>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="keyEphemeral" style="width:auto">
+        This page only — never store the key; it's forgotten on refresh or close</label>
+      <div class="help">
+        For the cautious: the key is kept in memory, written nowhere, and you paste it
+        again next time. This choice itself is remembered.
+      </div>
+    </div>
+
+    <div class="field" style="border-top:1px solid var(--border); padding-top:12px">
+      <label>Theme</label>
+      <div style="display:flex; gap:16px; flex-wrap:wrap">
+        <label style="display:flex; gap:6px; align-items:center; font-weight:normal">
+          <input type="radio" name="themeSel" value="light" style="width:auto"> Light</label>
+        <label style="display:flex; gap:6px; align-items:center; font-weight:normal">
+          <input type="radio" name="themeSel" value="dark" style="width:auto"> Dark</label>
+        <label style="display:flex; gap:6px; align-items:center; font-weight:normal">
+          <input type="radio" name="themeSel" value="system" style="width:auto"> Follow system</label>
+      </div>
+    </div>
+
+    <div class="field" style="border-top:1px solid var(--border); padding-top:12px">
+      <label>Backups</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:2px">
+        <button class="btn sm" id="exportAllDlg" title="Download every chat and version as one JSON file">Back up all</button>
+        <button class="btn sm" id="restoreAllDlg" title="Merge a backup JSON back in">Restore…</button>
+      </div>
+    </div>
+
+    <div class="field" style="border-top:1px solid var(--border); padding-top:12px">
+      <label>Auto-save to a file</label>
+      <div class="help" id="fileHelp"></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:2px">
+        <button class="btn sm" id="linkFileBtn">Create or pick a save file…</button>
+        <button class="btn sm" id="reconnectFileBtn" hidden>Reconnect</button>
+        <button class="btn sm danger" id="unlinkFileBtn" hidden>Unlink</button>
+      </div>
+    </div>
+
+    <div class="help" id="dbStats"></div>
+  </div>
+  <div class="d-foot">
+    <button class="btn" id="testKey">Test key</button>
+    <button class="btn" id="closeSettings">Close</button>
+    <button class="btn primary" id="saveSettings">Save</button>
+  </div>
+</dialog>
+
+<input type="file" id="filePick" accept=".json,.zip,application/json,application/zip" hidden>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   claude-local-workbench — a local replacement for the retired Anthropic
+   Workbench, with the feature it never had: a version snapshot of every run.
+
+   Community tool, not affiliated with Anthropic. MIT licensed.
+   Everything stays in this browser; the page only ever talks to
+   api.anthropic.com, with the user's own key.
+
+   Layout of this script:
+     1.  small helpers
+     2.  IndexedDB storage layer
+     3.  model capability gating          ← update here when models change
+     4.  request building + SSE streaming
+     5.  app state & chat/version operations
+     6.  rendering
+     7.  import (prompts.json / .zip) and backup export/import
+     8.  wiring / boot
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
+
+const APP_VERSION = "1.0.0";
+
+/* Format identifier written into backups and the linked save file. The legacy
+   id is what pre-release builds wrote; backups carrying it import forever. */
+const APP_ID = "claude-local-workbench";
+const LEGACY_APP_ID = "michelle-workbench";
+
+const $  = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+/** Short unique-enough id (time-ordered prefix keeps versions sortable). */
+function uid() {
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+}
+
+/** Build an element: el("div", {class:"x", onclick:fn}, child, "text") */
+function el(tag, props, ...kids) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "text") node.textContent = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (k === "style") node.setAttribute("style", v);
+    else if (v === true) node.setAttribute(k, "");
+    else node.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
+}
+
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+/** Accepts ms numbers or ISO strings (the export uses ISO). */
+function toMs(v) {
+  if (typeof v === "number") return v;
+  const t = Date.parse(v || "");
+  return Number.isNaN(t) ? Date.now() : t;
+}
+
+function fmtTime(ms) {
+  const d = new Date(ms), now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString([], { month: "short", day: "numeric",
+    year: sameYear ? undefined : "numeric" }) + ", " + time;
+}
+
+function fmtRel(ms) {
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  if (s < 604800) return Math.floor(s / 86400) + "d ago";
+  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+const nfmt = (n) => (typeof n === "number" ? n.toLocaleString() : "—");
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+/** Grow a textarea to fit its content, without ever shrinking the caret away. */
+function autoGrow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = (ta.scrollHeight + 2) + "px";
+}
+
+function banner(kind, title, msg, ms) {
+  const box = $("#banners");
+  const node = el("div", { class: "banner " + kind },
+    el("div", { class: "b-body" },
+      el("div", { class: "b-title", text: title }),
+      msg ? el("div", { class: "b-msg", text: msg }) : null),
+    el("button", { class: "btn icon", title: "Dismiss",
+      onclick: () => node.remove(), text: "✕" }));
+  box.append(node);
+  if (ms) setTimeout(() => node.remove(), ms);
+  return node;
+}
+const showError = (title, msg) => banner("err", title, msg);
+const showOk    = (title, msg) => banner("ok", title, msg, 4500);
+
+/** Add an action button inside a banner's body, under its message. */
+function bannerAction(b, label, fn) {
+  b.querySelector(".b-body").append(
+    el("div", { style: "margin-top:8px" },
+      el("button", { class: "btn primary sm", text: label, onclick: fn })));
+  return b;
+}
+
+/* ─── 2. Storage ─────────────────────────────────────────────────────────── */
+/*
+   Two object stores rather than one:
+     chats    — { id, name, createdAt, updatedAt, sourceUuid?, currentDraft }
+     versions — { id, chatId, createdAt, label, settings, messages, completion }
+   The spec's data model nests versions inside the chat; keeping them in their
+   own store means editing the draft rewrites one small record instead of the
+   entire (unbounded) history on every keystroke. Backups still nest them, so
+   the on-disk format matches the model exactly.
+*/
+
+const DB_NAME = "claude-local-workbench";
+const DB_VER = 2;   // v2 added the "meta" store (holds the linked save-file handle)
+let db = null;
+
+/*
+   One-time migration from the pre-release database name. If the old database
+   exists and this one is still empty, every record (chats, versions, meta —
+   including the linked save-file handle) is copied over. The old database is
+   left untouched, as its own backup. Best-effort: browsers without
+   indexedDB.databases() skip it (probing by open() would create an empty DB),
+   and any failure just means starting fresh — Restore still works.
+*/
+const LEGACY_DB_NAME = "michelle-workbench";
+async function migrateLegacyDB() {
+  try {
+    if (typeof indexedDB.databases !== "function") return;
+    const names = (await indexedDB.databases()).map(d => d.name);
+    if (!names.includes(LEGACY_DB_NAME)) return;
+    if ((await dbAllChats()).length) return;      // never merge into existing data
+    const old = await new Promise((res, rej) => {
+      const req = indexedDB.open(LEGACY_DB_NAME);
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+    try {
+      for (const name of ["chats", "versions", "meta"]) {
+        if (!old.objectStoreNames.contains(name)) continue;   // old v1 had no meta
+        const records = await new Promise((res, rej) => {
+          const rq = old.transaction(name, "readonly").objectStore(name).getAll();
+          rq.onsuccess = () => res(rq.result);
+          rq.onerror = () => rej(rq.error);
+        });
+        if (records.length) {
+          await txn(name, "readwrite", s => { for (const r of records) s[name].put(r); });
+        }
+      }
+    } finally {
+      old.close();
+    }
+  } catch { /* fresh start is the worst case */ }
+}
+
+function openDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    // Additive only — an existing v1 database keeps every chat and version.
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("chats")) d.createObjectStore("chats", { keyPath: "id" });
+      if (!d.objectStoreNames.contains("versions")) {
+        const s = d.createObjectStore("versions", { keyPath: "id" });
+        s.createIndex("chatId", "chatId", { unique: false });
+      }
+      if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta", { keyPath: "key" });
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+
+/**
+ * Run `fn(stores)` inside one transaction and resolve when it commits.
+ * `fn` may return an IDBRequest (its result is resolved) or nothing.
+ */
+function txn(names, mode, fn) {
+  return new Promise((res, rej) => {
+    const t = db.transaction(names, mode);
+    const stores = {};
+    for (const n of [].concat(names)) stores[n] = t.objectStore(n);
+    let value;
+    let r;
+    // A synchronous throw mid-way (e.g. a put() with an unusable key) must not
+    // leave the puts issued before it to commit on their own.
+    try { r = fn(stores); }
+    catch (e) { try { t.abort(); } catch {} rej(e); return; }
+    if (r && typeof r.addEventListener === "function") r.onsuccess = () => { value = r.result; };
+    t.oncomplete = () => res(value);
+    t.onerror = () => rej(t.error);
+    t.onabort = () => rej(t.error || new Error("transaction aborted"));
+  });
+}
+
+const dbAllChats     = ()   => txn("chats", "readonly", s => s.chats.getAll());
+const dbGetChat      = (id) => txn("chats", "readonly", s => s.chats.get(id));
+const dbAllVersions  = ()   => txn("versions", "readonly", s => s.versions.getAll());
+const dbVersionsFor  = (id) => txn("versions", "readonly", s => s.versions.index("chatId").getAll(id));
+
+const dbGetMeta      = (k)  => txn("meta", "readonly", s => s.meta.get(k));
+const dbPutMeta      = (r)  => txn("meta", "readwrite", s => s.meta.put(r));
+const dbDelMeta      = (k)  => txn("meta", "readwrite", s => s.meta.delete(k));
+
+/*
+   Every mutation goes through one of these three, so queueing the file
+   auto-save here covers all of them — edits, runs, imports and deletions —
+   with no chance of a call site being forgotten later.
+*/
+const dbPutChat = (c) =>
+  txn("chats", "readwrite", s => s.chats.put(c)).then(afterMutation);
+const dbPutVersion = (v) =>
+  txn("versions", "readwrite", s => s.versions.put(v)).then(afterMutation);
+const dbDelVersion = (id) =>
+  txn("versions", "readwrite", s => s.versions.delete(id)).then(afterMutation);
+
+/** Delete a chat and every version belonging to it, in one transaction. */
+function dbDeleteChat(chatId) {
+  return txn(["chats", "versions"], "readwrite", (s) => {
+    s.chats.delete(chatId);
+    const cur = s.versions.index("chatId").openKeyCursor(IDBKeyRange.only(chatId));
+    cur.onsuccess = () => {
+      const c = cur.result;
+      if (c) { s.versions.delete(c.primaryKey); c.continue(); }
+    };
+  }).then(afterMutation);
+}
+
+/* localStorage-backed preferences (small, synchronous, survives per browser) */
+
+/* With "this page only" ticked, the key lives in this variable and nowhere
+   else — not localStorage, not sessionStorage (which would survive a reload).
+   Navigate away or refresh and it is gone. The tick itself is remembered. */
+let memoryKey = "";
+
+const prefs = {
+  get keyEphemeral()  { return localStorage.getItem("wb.keyEphemeral") === "1"; },
+  set keyEphemeral(v) { localStorage.setItem("wb.keyEphemeral", v ? "1" : "0"); },
+  get key() {
+    return this.keyEphemeral ? memoryKey : (localStorage.getItem("wb.apiKey") || "");
+  },
+  set key(v) {
+    if (this.keyEphemeral) { memoryKey = v; localStorage.removeItem("wb.apiKey"); }
+    else { localStorage.setItem("wb.apiKey", v); memoryKey = ""; }
+  },
+  get lastChat()   { return localStorage.getItem("wb.lastChat") || ""; },
+  set lastChat(v)  { localStorage.setItem("wb.lastChat", v || ""); },
+  get lastModel()  { return localStorage.getItem("wb.lastModel") || "claude-opus-5"; },
+  set lastModel(v) { localStorage.setItem("wb.lastModel", v || ""); },
+  get theme()      { return localStorage.getItem("wb.theme") || "system"; },
+  set theme(v)     { localStorage.setItem("wb.theme", v); },
+  // "split" | "stacked" | "" (= not chosen yet, pick from window width)
+  get layout()     { return localStorage.getItem("wb.layout") || ""; },
+  set layout(v)    { localStorage.setItem("wb.layout", v); },
+  get ui()         { try { return JSON.parse(localStorage.getItem("wb.ui")) || {}; } catch { return {}; } },
+  set ui(v)        { localStorage.setItem("wb.ui", JSON.stringify(v)); },
+  get models()     { try { return JSON.parse(localStorage.getItem("wb.models")) || null; } catch { return null; } },
+  set models(v)    { localStorage.setItem("wb.models", JSON.stringify(v)); },
+  // Model ids typed by hand — kept so they stay in the picker afterwards.
+  get customModels()  { try { return JSON.parse(localStorage.getItem("wb.customModels")) || []; } catch { return []; } },
+  set customModels(v) { localStorage.setItem("wb.customModels", JSON.stringify(v)); },
+};
+
+/* ─── 3. Model capability gating ─────────────────────────────────────────── */
+/*
+   One function, `modelCaps(id)`, so a model launch is a small edit here.
+
+   Verified empirically against the live API on 2026-08-17. The two denylists
+   are NOT the same set — Opus 4.6 and Sonnet 4.6 reject prefill but happily
+   accept temperature — so they are kept as two separate lists on purpose.
+
+     prefill (a trailing assistant message) → 400 on:
+        fable-5, mythos-5, opus-5, sonnet-5, opus-4-8, opus-4-7,
+        opus-4-6, sonnet-4-6
+        ("This model does not support assistant message prefill.")
+     temperature / top_p / top_k → 400 on:
+        fable-5, mythos-5, opus-5, sonnet-5, opus-4-8, opus-4-7
+        ("`temperature` is deprecated for this model.")
+        Only the first offending parameter is reported, so all three are gated
+        together.
+     effort → read from GET /v1/models `capabilities.effort` when we have it
+        (it carries per-level flags: xhigh is false on the 4.6 models, and
+        Opus 4.5 exposes only low/medium/high). The table below is the offline
+        fallback for when the model list hasn't loaded.
+
+   An id we don't recognise falls through to a version heuristic, and anything
+   past that is treated permissively — the API's own error text is surfaced
+   verbatim, which is more useful than a guess.
+*/
+
+const EFFORT_5 = ["low", "medium", "high", "xhigh", "max"];
+const EFFORT_4 = ["low", "medium", "high", "max"];
+const EFFORT_3 = ["low", "medium", "high"];
+
+// Prefix matches: a dated snapshot (…-20260101) still matches its base id.
+const PREFILL_DENY = [
+  "claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
+  "claude-opus-5", "claude-sonnet-5",
+  "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6",
+];
+const SAMPLING_DENY = [
+  "claude-fable-5", "claude-mythos-5", "claude-mythos-preview",
+  "claude-opus-5", "claude-sonnet-5",
+  "claude-opus-4-8", "claude-opus-4-7",
+];
+
+const startsWithAny = (id, list) => list.some(p => id === p || id.startsWith(p + "-"));
+
+/** Effort levels from the live capabilities object, or null if unsupported. */
+function effortFromCapabilities(cap) {
+  const e = cap && cap.effort;
+  if (!e || !e.supported) return null;
+  const levels = EFFORT_5.filter(l => e[l] && e[l].supported);
+  return levels.length ? levels : EFFORT_5;
+}
+
+function modelCaps(id) {
+  const m = String(id || "").toLowerCase();
+  const info = findModelInfo(m);
+
+  let prefill, temperature, known = true;
+
+  if (startsWithAny(m, PREFILL_DENY)) prefill = false;
+  if (startsWithAny(m, SAMPLING_DENY)) temperature = false;
+
+  // Anything not on a list: decide from the version in the id.
+  if (prefill === undefined || temperature === undefined) {
+    if (/^claude-3(-|$)/.test(m)) {
+      // Claude 3-era ids (claude-3-opus-…, claude-3-7-sonnet-…) allow both.
+      prefill ??= true; temperature ??= true;
+    } else {
+      const mm = m.match(/^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/);
+      if (mm) {
+        // A trailing 8-digit group is a date snapshot, not a minor version.
+        const minor = mm[3] && mm[3].length <= 2 ? Number(mm[3]) : 0;
+        const v = Number(mm[2]) + minor / 10;
+        prefill ??= v <= 4.5;
+        temperature ??= v <= 4.6;
+      } else {
+        // Unknown shape (a model newer than this file): stay permissive.
+        prefill ??= true; temperature ??= true; known = false;
+      }
+    }
+  }
+
+  // Effort: live capabilities win; otherwise fall back to the known table.
+  let effort;
+  if (info && info.capabilities) {
+    effort = effortFromCapabilities(info.capabilities);
+  } else if (/^claude-(fable|mythos)/.test(m)) {
+    effort = EFFORT_5;
+  } else if (/^claude-3(-|$)/.test(m)) {
+    effort = null;
+  } else {
+    const mm = m.match(/^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/);
+    if (!mm) effort = EFFORT_5;
+    else {
+      const minor = mm[3] && mm[3].length <= 2 ? Number(mm[3]) : 0;
+      const v = Number(mm[2]) + minor / 10;
+      if (v >= 4.7) effort = EFFORT_5;
+      else if (v === 4.6) effort = EFFORT_4;
+      else if (v === 4.5 && mm[1] === "opus") effort = EFFORT_3;
+      else effort = null;
+    }
+  }
+
+  return { prefill, temperature, effort, known, info };
+}
+
+/*
+   Models the picker always offers, even when the API doesn't list them.
+   Deprecated models can drop out of GET /v1/models while still working for
+   accounts with access — Claude 3 Opus is exactly that case here — so this
+   list is MERGED with the API response, never replaced by it.
+*/
+const FALLBACK_MODELS = [
+  "claude-fable-5", "claude-opus-5", "claude-opus-4-8", "claude-opus-4-7",
+  "claude-opus-4-6", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5",
+  "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250929",
+  "claude-3-7-sonnet-20250219", "claude-3-opus-20240229",
+];
+
+/*
+   Prices in US dollars per million tokens, [input, output].
+
+   HARDCODED AND WILL GO STALE — there is no pricing endpoint to read this from.
+   Source: the claude-api skill's cached pricing table, dated 2026-06-24, plus
+   the published rates for older models. Check the pricing page before trusting
+   these for anything that matters, and update this one table when they change.
+   Note Sonnet 5 had an introductory input rate ($2/MTok through 2026-08-31);
+   the standard $3 is used here, so an estimate may read slightly high.
+
+   Order matters: the first prefix that matches wins, so more specific ids must
+   come before their shorter relatives (claude-opus-4-8 before claude-opus-4).
+   An id that matches nothing shows a token count with no dollar figure rather
+   than a wrong one.
+*/
+const PRICES = [
+  ["claude-fable-5",    10,   50],
+  ["claude-mythos",     10,   50],
+  ["claude-opus-5",      5,   25],
+  ["claude-opus-4-8",    5,   25],
+  ["claude-opus-4-7",    5,   25],
+  ["claude-opus-4-6",    5,   25],
+  ["claude-opus-4-5",    5,   25],
+  ["claude-opus-4-1",   15,   75],
+  ["claude-opus-4",     15,   75],
+  ["claude-3-opus",     15,   75],
+  ["claude-sonnet-5",    3,   15],
+  ["claude-sonnet-4-6",  3,   15],
+  ["claude-sonnet-4-5",  3,   15],
+  ["claude-sonnet-4",    3,   15],
+  ["claude-3-7-sonnet",  3,   15],
+  ["claude-3-5-sonnet",  3,   15],
+  ["claude-haiku-4-5",   1,    5],
+  ["claude-3-5-haiku",   0.8,  4],
+  ["claude-3-haiku",     0.25, 1.25],
+];
+
+/** [inputPerMTok, outputPerMTok] for a model id, or null if we don't know it. */
+function priceFor(id) {
+  const m = String(id || "").toLowerCase();
+  for (const [prefix, input, output] of PRICES) {
+    if (m === prefix || m.startsWith(prefix + "-")) return { input, output };
+  }
+  return null;
+}
+
+/** Money, with more precision the smaller it gets. */
+function fmtUSD(v) {
+  if (!isFinite(v)) return "";
+  if (v < 0.01) return "$" + v.toFixed(4);
+  if (v < 1) return "$" + v.toFixed(3);
+  return "$" + v.toFixed(2);
+}
+
+/**
+ * Look up a model entry. Handles the alias case: a chat may store
+ * `claude-haiku-4-5` while the API lists `claude-haiku-4-5-20251001`.
+ * (Never the reverse comparison — request and response ids legitimately differ.)
+ */
+function findModelInfo(id) {
+  if (!id) return null;
+  const list = state.models || [];
+  return list.find(m => m.id === id)
+      || list.find(m => m.id.startsWith(id + "-"))
+      || null;
+}
+
+/* ─── 4. Requests & streaming ────────────────────────────────────────────── */
+
+const API_BASE = "https://api.anthropic.com";
+
+function apiHeaders() {
+  return {
+    "content-type": "application/json",
+    "x-api-key": prefs.key,
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+  };
+}
+
+/** All text in a message, in order, thinking excluded. */
+function textOf(msg) {
+  return (msg.content || [])
+    .filter(b => b.type === "text")
+    .map(b => b.text || "")
+    .join("\n\n");
+}
+
+const thinkingOf = (msg) => (msg.content || []).filter(b => b.type === "thinking");
+
+/**
+ * Turn the draft into a request body.
+ *  - drops empty messages (a trailing blank turn is a UI convenience, not input)
+ *  - strips thinking blocks (old signatures don't replay across models)
+ *  - omits every parameter the model doesn't accept
+ *
+ * Messages are sent exactly as arranged. Consecutive same-role messages are
+ * accepted by the API now (verified 2026-08-17: two user turns in a row → 200,
+ * both honoured), so nothing is merged behind the user's back.
+ */
+function buildRequest(draft) {
+  const s = draft.settings;
+  const caps = modelCaps(s.model);
+  const messages = [];
+
+  for (const m of draft.messages) {
+    const text = textOf(m).trim();
+    if (!text) continue;
+    messages.push({ role: m.role, content: text });
+  }
+
+  const body = {
+    model: s.model,
+    max_tokens: Math.max(1, Math.round(s.maxTokens || 4096)),
+    messages,
+    stream: true,
+  };
+  if ((s.system || "").trim()) body.system = s.system;
+  const temp = effectiveTemperature(s, caps);
+  if (temp != null) body.temperature = temp;
+  if (s.effort) body.output_config = { effort: s.effort };
+  // NOTE: we deliberately never send `thinking`. Every current model's default
+  // is fine (Fable/Opus 5 think adaptively; older models don't think at all).
+  // To show reasoning summaries in future, add:
+  //   body.thinking = { type: "adaptive", display: "summarized" };
+  // — but only on models that accept it (4.6+), or it's a 400.
+  return body;
+}
+
+/*
+   Temperature has three states, not two:
+     a number  — set explicitly, send it
+     false     — the user unticked the box for this chat: never send it
+     null/undefined — undecided (a new chat, or an import with no temperature)
+   Undecided defaults to 1.0 on models that accept the parameter, so the slider
+   is live the moment it's wanted. Unticking writes `false`, which persists per
+   chat and is honoured for good. 1.0 is the API's own default, so this changes
+   what the UI shows and sends, not how the model behaves.
+*/
+const TEMP_DEFAULT = 1;
+
+function effectiveTemperature(settings, caps) {
+  if (!caps.temperature) return null;              // model rejects the param
+  if (typeof settings.temperature === "number") return settings.temperature;
+  if (settings.temperature === false) return null; // explicitly off
+  return TEMP_DEFAULT;                             // undecided
+}
+
+/** The prefill text that will be continued, or "" if this run has no prefill. */
+function prefillText(draft) {
+  const msgs = draft.messages.filter(m => textOf(m).trim());
+  const last = msgs[msgs.length - 1];
+  return last && last.role === "assistant" ? textOf(last).trim() : "";
+}
+
+/**
+ * Read an API error body into one readable line.
+ * The envelope is uniform: {type:"error", error:{type, message}, request_id}.
+ * Its wording is user-grade for every case except a 404 on an unknown model,
+ * where the server just says "model: <id>" — that one gets our own copy.
+ */
+async function apiErrorText(res, ctx) {
+  let raw = "";
+  try { raw = await res.text(); } catch { /* ignore */ }
+  let j = null;
+  try { j = JSON.parse(raw); } catch { /* not JSON */ }
+
+  const err = j && j.error;
+  if (err) {
+    if (err.type === "not_found_error" && /^model:/.test(err.message || "")) {
+      const id = (ctx && ctx.model) || String(err.message).replace(/^model:\s*/, "");
+      return `Unknown model "${id}". Your account may not have access to it, or the id may ` +
+             `have a typo — pick another from the model list, or reload the list with ⟳.`;
+    }
+    if (err.message) return err.message;
+  }
+  return raw ? `HTTP ${res.status}: ${raw.slice(0, 800)}` : `HTTP ${res.status} ${res.statusText}`;
+}
+
+/**
+ * Stream POST /v1/messages, feeding events to `on`.
+ *   on.start(message)  on.block(index, block)  on.delta()  on.done(final)
+ * Returns the accumulated { content, stopReason, stopDetails, usage, model }.
+ */
+async function streamMessage(body, signal, on) {
+  const res = await fetch(API_BASE + "/v1/messages", {
+    method: "POST", headers: apiHeaders(), body: JSON.stringify(body), signal,
+  });
+  if (!res.ok) throw new Error(await apiErrorText(res, { model: body.model }));
+  if (!res.body) throw new Error("This browser gave no response stream to read.");
+
+  const out = { content: [], stopReason: null, stopDetails: null, usage: {}, model: body.model };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+
+  // Belt-and-braces on stream-supplied values: usage keys are copied one by
+  // one (never through a "__proto__" setter) and block indices must be small
+  // non-negative integers before they index the content array.
+  const mergeUsage = (u) => {
+    if (!u || typeof u !== "object") return;
+    for (const k of Object.keys(u)) {
+      if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+      out.usage[k] = u[k];
+    }
+  };
+  const blockIndex = (i) => (Number.isInteger(i) && i >= 0 && i < 10000) ? i : null;
+
+  const handle = (evt) => {
+    switch (evt.type) {
+      case "message_start":
+        // The response model differs from the requested one for aliased ids
+        // (claude-haiku-4-5 → claude-haiku-4-5-20251001). Record it, never
+        // compare it to the request.
+        out.model = evt.message?.model || out.model;
+        out.id = evt.message?.id;
+        mergeUsage(evt.message?.usage);
+        on.start && on.start(out);
+        break;
+      case "content_block_start": {
+        const idx = blockIndex(evt.index);
+        if (idx === null) break;
+        const b = clone(evt.content_block || { type: "text" });
+        if (b.type === "text" && b.text == null) b.text = "";
+        if (b.type === "thinking" && b.thinking == null) b.thinking = "";
+        out.content[idx] = b;
+        on.block && on.block(out);
+        break;
+      }
+      case "content_block_delta": {
+        const idx = blockIndex(evt.index);
+        if (idx === null) break;
+        const b = out.content[idx] || (out.content[idx] = { type: "text", text: "" });
+        const d = evt.delta || {};
+        if (d.type === "text_delta") b.text = (b.text || "") + d.text;
+        else if (d.type === "thinking_delta") b.thinking = (b.thinking || "") + d.thinking;
+        else if (d.type === "signature_delta") b.signature = d.signature;
+        else if (d.type === "input_json_delta") b.partial_json = (b.partial_json || "") + d.partial_json;
+        on.delta && on.delta(out);
+        break;
+      }
+      case "message_delta":
+        if (evt.delta) {
+          if (evt.delta.stop_reason) out.stopReason = evt.delta.stop_reason;
+          if (evt.delta.stop_details) out.stopDetails = evt.delta.stop_details;
+        }
+        if (evt.stop_details) out.stopDetails = evt.stop_details;
+        mergeUsage(evt.usage);
+        break;
+      case "message_stop":
+        out.done = true;
+        break;
+      case "error":
+        throw new Error(evt.error ? `${evt.error.type}: ${evt.error.message}` : "stream error");
+      default: /* ping, and anything new: ignore */ break;
+    }
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; a frame may carry several
+    // `data:` lines which are joined with newlines before parsing.
+    let sep;
+    while ((sep = buf.search(/\r?\n\r?\n/)) !== -1) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + (buf[sep] === "\r" ? 4 : 2));
+      const data = frame.split(/\r?\n/)
+        .filter(l => l.startsWith("data:"))
+        .map(l => l.slice(5).trim())
+        .join("\n");
+      if (!data || data === "[DONE]") continue;
+      let evt;
+      try { evt = JSON.parse(data); } catch { continue; }
+      handle(evt);
+    }
+  }
+  out.content = out.content.filter(Boolean);
+  on.done && on.done(out);
+  return out;
+}
+
+/**
+ * GET /v1/models, following the has_more / last_id cursor.
+ * Keeps `capabilities` so effort gating can come from live data.
+ */
+async function fetchModels() {
+  const out = [];
+  let after = null;
+  for (let page = 0; page < 10; page++) {          // hard stop; the list is ~11 models
+    const url = API_BASE + "/v1/models?limit=100" + (after ? "&after_id=" + encodeURIComponent(after) : "");
+    const res = await fetch(url, { headers: apiHeaders() });
+    if (!res.ok) throw new Error(await apiErrorText(res));
+    const j = await res.json();
+    for (const m of (j.data || [])) {
+      out.push({
+        id: m.id,
+        name: m.display_name || m.id,
+        maxTokens: m.max_tokens || null,
+        maxInput: m.max_input_tokens || null,
+        capabilities: m.capabilities || null,
+        source: "api",
+      });
+    }
+    if (!j.has_more || !j.last_id) break;
+    after = j.last_id;
+  }
+  return out;
+}
+
+/**
+ * POST /v1/messages/count_tokens — free, and gives the exact input token count
+ * the real request would be billed for. Takes the same body as a run, minus
+ * everything that only affects generation (max_tokens, stream, temperature,
+ * output_config), which this endpoint doesn't accept.
+ */
+async function countInputTokens(body, signal) {
+  const payload = { model: body.model, messages: body.messages };
+  if (body.system) payload.system = body.system;
+  const res = await fetch(API_BASE + "/v1/messages/count_tokens", {
+    method: "POST", headers: apiHeaders(), body: JSON.stringify(payload), signal,
+  });
+  if (!res.ok) throw new Error(await apiErrorText(res, { model: body.model }));
+  const j = await res.json();
+  if (typeof j.input_tokens !== "number") throw new Error("No input_tokens in the response.");
+  return j.input_tokens;
+}
+
+/* ─── 5. App state & operations ──────────────────────────────────────────── */
+
+const state = {
+  chats: [],          // chat summaries (full records; drafts included)
+  chat: null,         // the open chat
+  versions: [],       // versions of the open chat, newest first
+  models: [],         // [{id,name,maxTokens}]
+  activeVersionId: null,
+  running: false,
+  controller: null,
+  persisted: null,    // navigator.storage.persist() result, shown in Settings
+  estimate: null,     // { tokens, exact, model, note } — pre-run input estimate
+  completion: null,   // { content, stopReason, usage, model, prefill, at }
+  streaming: false,
+};
+
+const MT_MIN = 256, MT_MAX = 128000;
+const LMIN = Math.log(MT_MIN), LMAX = Math.log(MT_MAX);
+const mtToSlider = (v) => Math.round(1000 * (Math.log(clampMT(v)) - LMIN) / (LMAX - LMIN));
+function sliderToMT(s) {
+  const raw = Math.exp(LMIN + (s / 1000) * (LMAX - LMIN));
+  let v;
+  if (raw < 1000) v = Math.round(raw / 64) * 64;
+  else if (raw < 10000) v = Math.round(raw / 256) * 256;
+  else if (raw < 64000) v = Math.round(raw / 1000) * 1000;
+  else v = Math.round(raw / 2000) * 2000;
+  return clampMT(v);
+}
+const clampMT = (v) => Math.min(MT_MAX, Math.max(MT_MIN, Math.round(v || MT_MIN)));
+
+function newMessage(role, text) {
+  return { id: uid(), role, content: [{ type: "text", text: text || "" }] };
+}
+
+function newDraft() {
+  return {
+    settings: {
+      model: prefs.lastModel,
+      maxTokens: 16000,
+      temperature: null,   // undecided → 1.0 on models that accept it
+      effort: "",          // "" = don't send output_config
+      system: "",
+    },
+    messages: [newMessage("user", "")],
+  };
+}
+
+function newChat(name) {
+  const now = Date.now();
+  return { id: uid(), name: name || "", createdAt: now, updatedAt: now, currentDraft: newDraft() };
+}
+
+/** Canonical form used for "has the draft changed since the last version?" */
+function draftKey(d) {
+  return JSON.stringify({
+    s: d.settings,
+    m: (d.messages || []).map(m => ({ r: m.role, c: m.content })),
+  });
+}
+
+function draftIsDirty() {
+  if (!state.chat) return false;
+  const newest = state.versions[0];
+  if (!newest) return true;
+  return draftKey(state.chat.currentDraft) !== draftKey({ settings: newest.settings, messages: newest.messages });
+}
+
+/** Snapshot the current draft as a new version. Returns the version. */
+async function snapshot(label) {
+  const d = state.chat.currentDraft;
+  const v = {
+    id: uid(),
+    chatId: state.chat.id,
+    createdAt: Date.now(),
+    label: label || "",
+    settings: clone(d.settings),
+    messages: clone(d.messages),
+    completion: null,
+  };
+  await dbPutVersion(v);
+  state.versions.unshift(v);
+  state.activeVersionId = v.id;
+  renderVersions();
+  return v;
+}
+
+/*
+   Every draft mutation funnels through these two, so re-estimating here covers
+   typing, role toggles, add/delete, model changes and restores alike.
+*/
+const saveChatSoon = debounce(async () => {
+  if (!state.chat) return;
+  state.chat.updatedAt = Date.now();
+  await dbPutChat(state.chat);
+  renderChatList();
+  scheduleEstimate();
+}, 400);
+
+async function saveChatNow() {
+  if (!state.chat) return;
+  state.chat.updatedAt = Date.now();
+  await dbPutChat(state.chat);
+  renderChatList();
+  scheduleEstimate();
+}
+
+async function openChat(id) {
+  const chat = await dbGetChat(id);
+  if (!chat) return;
+  if (!chat.currentDraft) chat.currentDraft = newDraft();
+  state.chat = chat;
+  state.versions = (await dbVersionsFor(id)).sort((a, b) => b.createdAt - a.createdAt);
+  state.activeVersionId = null;
+  state.completion = null;
+  state.estimate = null;
+  prefs.lastChat = id;
+  renderAll();
+  scheduleEstimate();
+  $("#scroller").scrollTop = 0;
+}
+
+async function createChat() {
+  const chat = newChat("");
+  await dbPutChat(chat);
+  state.chats.unshift(chat);
+  await openChat(chat.id);
+  $("#chatTitle").focus();
+}
+
+/* ── The run ──────────────────────────────────────────────────────────────
+   Run = snapshot first, then stream into that snapshot. Even if the request
+   fails, the snapshot survives — nothing typed is ever lost to a bad request.
+   ─────────────────────────────────────────────────────────────────────────*/
+async function run() {
+  if (state.running || !state.chat) return;
+  if (!prefs.key) { openSettings(); showError("No API key yet", "Paste your key in Settings, then Run again."); return; }
+
+  const draft = state.chat.currentDraft;
+  let body;
+  try { body = buildRequest(draft); } catch (e) { showError("Could not build the request", String(e.message || e)); return; }
+  if (!body.messages.length) { showError("Nothing to send", "Add at least one message with text in it."); return; }
+
+  // Snapshot BEFORE the request goes out: even if the API rejects it, the exact
+  // state that was attempted is already saved and nothing typed can be lost.
+  const version = await snapshot(null);
+  const prefill = prefillText(draft);
+
+  // Don't hold a token count open across a run; the pre-run figure stands.
+  if (estimateCtrl) { estimateCtrl.abort(); estimateCtrl = null; }
+
+  state.running = true;
+  state.streaming = true;
+  state.controller = new AbortController();
+  state.completion = {
+    content: [], stopReason: null, usage: {}, model: draft.settings.model,
+    // The API returns the CONTINUATION only — it never echoes the prefill back.
+    // We keep it here so the pane (and "Add to conversation") can join them.
+    prefill, at: Date.now(),
+  };
+  renderRunbar();
+  renderCompletion();
+
+  const paint = throttleFrame(renderCompletion);
+  // Point the pane at the accumulating blocks so text appears as it arrives.
+  const track = (out) => {
+    state.completion.content = out.content;
+    state.completion.usage = out.usage;
+    state.completion.model = out.model || state.completion.model;
+    paint();
+  };
+
+  try {
+    const out = await streamMessage(body, state.controller.signal, {
+      start: track, block: track, delta: track,
+    });
+    Object.assign(state.completion, {
+      content: out.content, stopReason: out.stopReason, stopDetails: out.stopDetails,
+      usage: out.usage, model: out.model,
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      state.completion.stopReason = "stopped_by_you";
+    } else {
+      state.completion.error = String(e.message || e);
+      showError("The API rejected that run", String(e.message || e));
+    }
+  } finally {
+    state.running = false;
+    state.streaming = false;
+    state.controller = null;
+    // Persist the completion onto the version that produced it.
+    version.completion = clone(state.completion);
+    await dbPutVersion(version);
+    await saveChatNow();
+    renderRunbar();
+    renderCompletion();
+    renderVersions();
+  }
+}
+
+/*
+   Typing must never feel heavy: the dirty-check stringifies the whole draft,
+   so the run bar's hints refresh on a short delay instead of every keystroke.
+*/
+const renderRunbarSoon = debounce(() => renderRunbar(), 250);
+
+/* ── Input cost estimate ──────────────────────────────────────────────────
+   Input only. Output length isn't predictable and a guessed number would be
+   worse than none, so the estimate covers exactly what can be known before
+   pressing Run. The exact count comes from the free count_tokens endpoint;
+   if that's unavailable for any reason the local heuristic stands in, clearly
+   marked with a "~".
+   ─────────────────────────────────────────────────────────────────────────*/
+const ESTIMATE_DELAY = 1500;
+const CHARS_PER_TOKEN = 3.5;          // rough-but-fair fallback ratio
+
+let estimateCtrl = null;              // aborts an in-flight count
+let estimateSeq = 0;                  // guards against a stale response landing
+
+async function runEstimate() {
+  if (!state.chat || state.running) return;
+
+  let body;
+  try { body = buildRequest(state.chat.currentDraft); } catch { return; }
+  if (!body.messages.length) {
+    state.estimate = { tokens: 0, exact: true, model: body.model };
+    renderEstimate();
+    return;
+  }
+
+  // Show the local approximation straight away, then refine it if we can.
+  const chars = (body.system || "").length +
+    body.messages.reduce((n, m) => n + (m.content || "").length, 0);
+  const seq = ++estimateSeq;
+  state.estimate = {
+    tokens: Math.round(chars / CHARS_PER_TOKEN),
+    exact: false, model: body.model, note: "",
+  };
+  renderEstimate();
+
+  if (!prefs.key) return;
+  if (estimateCtrl) estimateCtrl.abort();
+  estimateCtrl = new AbortController();
+  try {
+    const tokens = await countInputTokens(body, estimateCtrl.signal);
+    if (seq !== estimateSeq) return;                 // a newer estimate won
+    state.estimate = { tokens, exact: true, model: body.model, note: "" };
+  } catch (e) {
+    // Silent by design: an unreachable counter, or a model that rejects the
+    // shape (e.g. prefill on 4.6+), must not interrupt the user's writing.
+    if (seq !== estimateSeq || (e && e.name === "AbortError")) return;
+    state.estimate.note = String(e.message || e);
+  } finally {
+    if (seq === estimateSeq) { estimateCtrl = null; renderEstimate(); }
+  }
+}
+
+const scheduleEstimate = debounce(runEstimate, ESTIMATE_DELAY);
+
+function renderEstimate() {
+  const node = $("#estimate");
+  if (!node) return;
+  const e = state.estimate;
+  // Nothing to say for an empty chat — no "0 input tokens ≈ $0.0000" noise.
+  if (!e || !state.chat || !e.tokens) { node.textContent = ""; node.hidden = true; return; }
+
+  const price = priceFor(e.model);
+  const approx = e.exact ? "" : "~";
+  let text = `${approx}${nfmt(e.tokens)} input tokens`;
+  if (price) text += ` ≈ ${fmtUSD((e.tokens / 1e6) * price.input)}`;
+
+  node.hidden = false;
+  node.textContent = text;
+  node.title = (e.exact
+      ? "Exact input token count from the API's token counter."
+      : "Estimated locally (about " + CHARS_PER_TOKEN + " characters per token)" +
+        (e.note ? " — the token counter said: " + e.note : " — no API key yet.")) +
+    (price
+      ? `\nInput is billed at ${fmtUSD(price.input)}/million tokens. Output isn't estimated: its length isn't knowable in advance.`
+      : "\nNo price on file for this model, so no cost is shown.");
+}
+
+function throttleFrame(fn) {
+  let queued = false;
+  return () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; fn(); });
+  };
+}
+
+function stopRun() {
+  if (state.controller) state.controller.abort();
+}
+
+/** Append the completion to the conversation (merging a prefill if one was used). */
+async function addToConversation() {
+  const c = state.completion;
+  if (!c) return;
+  const text = (c.content || []).filter(b => b && b.type === "text").map(b => b.text || "").join("");
+  if (!text.trim() && !c.prefill) { showError("Nothing to add", "The completion is empty."); return; }
+
+  const msgs = state.chat.currentDraft.messages;
+  const lastNonEmpty = [...msgs].reverse().find(m => textOf(m).trim());
+
+  if (c.prefill && lastNonEmpty && lastNonEmpty.role === "assistant") {
+    // Continue the prefill in place, exactly like the old Workbench did.
+    lastNonEmpty.content = [
+      ...thinkingOf(lastNonEmpty),
+      { type: "text", text: c.prefill + text },
+    ];
+    // Drop anything after it that was blank.
+    const idx = msgs.indexOf(lastNonEmpty);
+    state.chat.currentDraft.messages = msgs.slice(0, idx + 1);
+  } else {
+    // Trim a trailing blank message, then append the assistant turn.
+    while (msgs.length && !textOf(msgs[msgs.length - 1]).trim()) msgs.pop();
+    msgs.push({ id: uid(), role: "assistant", content: [{ type: "text", text }] });
+  }
+  // Leave a fresh user turn ready to type into.
+  state.chat.currentDraft.messages.push(newMessage("user", ""));
+  state.completion = null;
+  await saveChatNow();
+  renderMessages();
+  renderCompletion();
+  renderRunbar();
+}
+
+async function restoreVersion(v) {
+  if (state.running) { showError("Still running", "Stop the current run before restoring."); return; }
+  if (draftIsDirty()) await snapshot("(auto-saved before restore)");
+  state.chat.currentDraft = { settings: clone(v.settings), messages: clone(v.messages) };
+  for (const m of state.chat.currentDraft.messages) if (!m.id) m.id = uid();
+  state.completion = v.completion ? clone(v.completion) : null;
+  state.activeVersionId = v.id;
+  await saveChatNow();
+  renderAll();
+  showOk("Restored", fmtTime(v.createdAt) + (v.label ? " — " + v.label : ""));
+}
+
+/* ─── 6. Rendering ───────────────────────────────────────────────────────── */
+
+function renderAll() {
+  renderChatList();
+  renderSettingsBar();
+  renderSystem();
+  renderMessages();
+  renderCompletion();
+  renderVersions();
+  renderRunbar();
+  renderEstimate();
+  renderKeyState();
+  $("#chatTitle").value = state.chat ? state.chat.name : "";
+  $("#chatTitle").disabled = !state.chat;
+}
+
+function renderChatList() {
+  const list = $("#chatList");
+  list.textContent = "";
+  const chats = [...state.chats].sort((a, b) => b.updatedAt - a.updatedAt);
+  if (!chats.length) {
+    list.append(el("div", { class: "empty-note" },
+      "No chats yet. Start one with ", el("b", { text: "＋ New" }),
+      ", or import your Workbench export below."));
+    return;
+  }
+  for (const c of chats) {
+    const isActive = state.chat && c.id === state.chat.id;
+    list.append(el("div", {
+      class: "chat-item" + (isActive ? " active" : ""),
+      onclick: (e) => { if (!e.target.closest("button")) openChat(c.id); },
+    },
+      el("div", { class: "ci-body" },
+        el("div", { class: "ci-name", text: c.name || "Untitled chat" }),
+        el("div", { class: "ci-meta", text: fmtRel(c.updatedAt) })),
+      el("div", { class: "ci-acts" },
+        el("button", { class: "btn icon sm", title: "Rename", text: "✎",
+          onclick: () => renameChat(c) }),
+        el("button", { class: "btn icon sm", title: "Delete", text: "🗑",
+          onclick: () => deleteChat(c) }))));
+  }
+}
+
+async function renameChat(c) {
+  const name = prompt("Rename chat", c.name || "");
+  if (name == null) return;
+  c.name = name.trim();
+  await dbPutChat(c);
+  if (state.chat && state.chat.id === c.id) { state.chat.name = c.name; $("#chatTitle").value = c.name; }
+  renderChatList();
+}
+
+async function deleteChat(c) {
+  const n = (await dbVersionsFor(c.id)).length;
+  if (!confirm(`Delete "${c.name || "Untitled chat"}" and its ${n} saved version${n === 1 ? "" : "s"}?\n\nThis cannot be undone.`)) return;
+  await dbDeleteChat(c.id);
+  state.chats = state.chats.filter(x => x.id !== c.id);
+  if (state.chat && state.chat.id === c.id) {
+    state.chat = null; state.versions = []; state.completion = null;
+    const next = [...state.chats].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    return next ? openChat(next.id) : createChat();   // never leave the user with no chat
+  }
+  renderAll();
+}
+
+/**
+ * Everything the picker should offer, in order:
+ *   live API list → hardcoded extras the API omits → hand-typed ids → this
+ *   chat's own model if it is none of the above (a chat NEVER silently
+ *   switches models just because its id isn't in the list).
+ * A hardcoded alias is dropped only when the API already lists a dated
+ * snapshot of it (claude-haiku-4-5 vs claude-haiku-4-5-20251001).
+ */
+function modelOptions(current) {
+  const seen = new Map();
+  const add = (m) => { if (m && m.id && !seen.has(m.id)) seen.set(m.id, m); };
+
+  for (const m of state.models) add(m);
+  for (const id of FALLBACK_MODELS) {
+    // Skip an alias the API already covers with a dated snapshot — unless this
+    // chat is actually set to the alias, in which case it must stay selectable.
+    const covered = [...seen.keys()].some(k => k === id || k.startsWith(id + "-"));
+    if (!covered || id === current) add({ id, name: id, source: "fallback" });
+  }
+  for (const id of prefs.customModels) add({ id, name: id + " — custom", source: "custom" });
+  if (current) {
+    const known = [...seen.keys()].some(k => k === current);
+    if (!known) add({ id: current, name: current + " — kept from this chat", source: "chat" });
+  }
+  return [...seen.values()];
+}
+
+const CUSTOM_MODEL_OPTION = "__custom__";
+
+function renderSettingsBar() {
+  if (!state.chat) return;
+  const s = state.chat.currentDraft.settings;
+  const caps = modelCaps(s.model);
+
+  const sel = $("#modelSel");
+  sel.textContent = "";
+  for (const m of modelOptions(s.model)) {
+    sel.append(el("option", { value: m.id, selected: m.id === s.model }, m.name || m.id));
+  }
+  sel.append(el("option", { value: CUSTOM_MODEL_OPTION }, "Custom model id…"));
+  sel.value = s.model;
+
+  // Max tokens
+  $("#maxTokRange").value = mtToSlider(s.maxTokens);
+  $("#maxTokNum").value = s.maxTokens;
+  const known = caps.info;
+  $("#maxTokHint").textContent = known && known.maxTokens ? `model max ${nfmt(known.maxTokens)}` : "";
+
+  // Temperature — disabled entirely on models that reject it; otherwise on by
+  // default (see effectiveTemperature) so the slider is usable straight away.
+  const tf = $("#tempField");
+  tf.classList.toggle("disabled-field", !caps.temperature);
+  const temp = effectiveTemperature(s, caps);
+  const tempOn = temp != null;
+  $("#tempHint").textContent = caps.temperature
+    ? (tempOn ? "" : "not sent")
+    : "removed on this model";
+  $("#tempOn").checked = tempOn;
+  const t = tempOn ? temp : TEMP_DEFAULT;
+  $("#tempRange").value = t; $("#tempNum").value = t;
+  $("#tempRange").disabled = $("#tempNum").disabled = !tempOn;
+
+  // Effort
+  const ef = $("#effortField");
+  const esel = $("#effortSel");
+  esel.textContent = "";
+  esel.append(el("option", { value: "" }, "default (not sent)"));
+  for (const lv of (caps.effort || [])) esel.append(el("option", { value: lv }, lv));
+  if (!caps.effort) { ef.classList.add("disabled-field"); $("#effortHint").textContent = "unsupported here"; }
+  else { ef.classList.remove("disabled-field"); $("#effortHint").textContent = ""; }
+  esel.value = caps.effort && caps.effort.includes(s.effort) ? s.effort : "";
+  if (esel.value !== s.effort) s.effort = esel.value;
+}
+
+function renderSystem() {
+  if (!state.chat) return;
+  const ta = $("#sysText");
+  ta.value = state.chat.currentDraft.settings.system || "";
+  autoGrow(ta);
+  const n = ta.value.length;
+  $("#sysHint").textContent = n ? nfmt(n) + " chars" : "";
+}
+
+function renderMessages() {
+  const box = $("#messages");
+  box.textContent = "";
+  if (!state.chat) return;
+  const msgs = state.chat.currentDraft.messages;
+  const caps = modelCaps(state.chat.currentDraft.settings.model);
+
+  msgs.forEach((m, i) => {
+    const isLast = i === msgs.length - 1;
+    const think = thinkingOf(m);
+
+    const setRole = (role) => {
+      m.role = role;
+      renderMessages();
+      renderRunbar();
+      saveChatSoon();
+    };
+
+    const ta = el("textarea", {
+      rows: 1,
+      // Chrome's enhanced spell check uploads text to Google; people paste
+      // sensitive prompts here, so don't invite that.
+      spellcheck: "false",
+      placeholder: m.role === "user" ? "Your turn…"
+        : (isLast ? "Assistant text here acts as a prefill — the model continues it."
+                  : "Assistant turn…"),
+      oninput: (e) => {
+        // Keep any thinking blocks, replace the text portion.
+        m.content = [...thinkingOf(m), { type: "text", text: e.target.value }];
+        autoGrow(e.target);
+        saveChatSoon();
+        renderRunbarSoon();
+      },
+    });
+    ta.value = textOf(m);
+
+    const card = el("div", { class: "msg " + m.role },
+      el("div", { class: "msg-head" },
+        el("div", { class: "roles" },
+          el("button", { class: m.role === "user" ? "on" : "", text: "User",
+            onclick: () => setRole("user") }),
+          el("button", { class: m.role === "assistant" ? "on" : "", text: "Assistant",
+            onclick: () => setRole("assistant") })),
+        (isLast && m.role === "assistant" && textOf(m).trim())
+          ? el("span", { class: "pill" + (caps.prefill ? "" : " warn"),
+              title: caps.prefill
+                ? "This trailing assistant turn is sent as a prefill; the model continues it."
+                : "This model returns 400 for prefill. Run will fail until you remove or reroll this turn." },
+              caps.prefill ? "prefill" : "prefill unsupported")
+          : null,
+        el("span", { class: "spacer" }),
+        think.length ? el("span", { class: "tag", text: think.length + " thinking block" + (think.length > 1 ? "s" : "") }) : null,
+        el("button", { class: "btn icon sm", title: "Insert a message below", text: "＋",
+          onclick: () => {
+            msgs.splice(i + 1, 0, newMessage(m.role === "user" ? "assistant" : "user", ""));
+            renderMessages(); saveChatSoon();
+          } }),
+        el("button", { class: "btn icon sm", title: "Delete this message", text: "✕",
+          onclick: () => {
+            msgs.splice(i, 1);
+            if (!msgs.length) msgs.push(newMessage("user", ""));
+            renderMessages(); renderRunbar(); saveChatSoon();
+          } })),
+      // Imported thinking blocks: shown, collapsed, never sent back to the API.
+      think.length ? el("details", { class: "thinkblock" },
+        el("summary", { text: "thinking (kept for your record, not sent)" }),
+        ...think.map(b => el("div", { class: "body", text: b.thinking || "" }))) : null,
+      ta);
+
+    box.append(card);
+    requestAnimationFrame(() => autoGrow(ta));
+  });
+}
+
+function renderCompletion() {
+  const card = $("#completion");
+  const c = state.completion;
+  const empty = $("#respEmpty");
+  if (empty) empty.hidden = !!c;          // placeholder for the empty split pane
+  if (!c) { card.hidden = true; return; }
+  card.hidden = false;
+
+  const body = $("#outBody");
+  // Follow a live stream only if the user is already reading at the bottom;
+  // if they have scrolled up to re-read something, leave them exactly there.
+  // The container differs by layout: the response pane in split mode, the
+  // whole column in stacked mode.
+  const sc = completionScroller();
+  const stick = state.streaming && (sc.scrollHeight - sc.scrollTop - sc.clientHeight < 120);
+
+  body.textContent = "";
+  // While streaming, content is indexed by block number and can be sparse.
+  const blocks = (c.content || []).filter(Boolean);
+
+  // Reasoning summaries, if the model returned any non-empty ones.
+  for (const b of blocks) {
+    if (b.type === "thinking" && (b.thinking || "").trim()) {
+      body.append(el("details", { class: "thinkblock", open: true },
+        el("summary", { text: "thinking" }),
+        el("div", { class: "body", text: b.thinking })));
+    }
+  }
+  if (c.prefill) body.append(el("span", { class: "prefill", text: c.prefill }));
+
+  const text = blocks.filter(b => b.type === "text").map(b => b.text || "").join("");
+  if (text) body.append(document.createTextNode(text));
+
+  // Any block type we don't render specially (tool_use, fallback, …).
+  for (const b of blocks) {
+    if (b.type !== "text" && b.type !== "thinking") {
+      body.append(el("div", { class: "pill", style: "margin-top:8px",
+        text: b.type + " block — see backup JSON for details" }));
+    }
+  }
+  if (!text && !c.prefill && !state.streaming) {
+    body.append(el("span", { class: "empty", text: c.error ? "The run failed — see the banner." : "(no text returned)" }));
+  }
+  body.classList.toggle("blink", state.streaming);
+
+  // Meta line
+  const meta = $("#outMeta");
+  meta.textContent = "";
+  const bits = [];
+  if (c.model) bits.push(el("span", {}, el("b", { text: "model " }), c.model));
+  if (c.stopReason) {
+    const warn = c.stopReason === "refusal" || c.stopReason === "max_tokens";
+    bits.push(el("span", { class: warn ? "pill warn" : "pill" }, "stop: " + c.stopReason));
+  }
+  const u = c.usage || {};
+  if (u.input_tokens != null) bits.push(el("span", { text: `in ${nfmt(u.input_tokens)}` }));
+  if (u.output_tokens != null) bits.push(el("span", { text: `out ${nfmt(u.output_tokens)}` }));
+  if (u.cache_read_input_tokens) bits.push(el("span", { text: `cache read ${nfmt(u.cache_read_input_tokens)}` }));
+  if (u.cache_creation_input_tokens) bits.push(el("span", { text: `cache write ${nfmt(u.cache_creation_input_tokens)}` }));
+
+  // What this run actually cost, from the usage the API reported. Priced on the
+  // model that answered (c.model), which for an alias is the dated id.
+  const price = priceFor(c.model);
+  if (price && (u.input_tokens != null || u.output_tokens != null)) {
+    const inCost = ((u.input_tokens || 0) / 1e6) * price.input;
+    const outCost = ((u.output_tokens || 0) / 1e6) * price.output;
+    bits.push(el("span", {
+      title: `input ${nfmt(u.input_tokens || 0)} × ${fmtUSD(price.input)}/M = ${fmtUSD(inCost)}\n` +
+             `output ${nfmt(u.output_tokens || 0)} × ${fmtUSD(price.output)}/M = ${fmtUSD(outCost)}\n` +
+             `Prices are from a table inside this file and may be out of date.`,
+      style: "cursor:help",
+    }, "cost " + fmtUSD(inCost + outCost)));
+  }
+  if (c.at) bits.push(el("span", { text: fmtTime(c.at) }));
+  if (c.stopReason === "refusal") {
+    const d = c.stopDetails || {};
+    bits.push(el("span", { style: "flex-basis:100%; color:var(--danger)",
+      text: "The model declined this turn" + (d.category ? ` (${d.category})` : "") +
+            (d.explanation ? ": " + d.explanation : ".") }));
+  }
+  if (bits.length) { meta.hidden = false; bits.forEach(b => meta.append(b)); }
+  else meta.hidden = true;
+
+  $("#addToConv").disabled = state.streaming || !(text || c.prefill);
+  $("#copyOut").disabled = !(text || c.prefill);
+
+  if (stick) sc.scrollTop = sc.scrollHeight;
+}
+
+function renderVersions() {
+  const list = $("#versionList");
+  list.textContent = "";
+  $("#verCount").textContent = state.versions.length ? String(state.versions.length) : "0";
+
+  if (!state.versions.length) {
+    list.append(el("div", { class: "empty-note" },
+      "Every time you press Run, the exact state that produced the answer is saved here — ",
+      "system prompt, settings, all messages, and the completion. Nothing is ever overwritten."));
+    return;
+  }
+
+  for (const v of state.versions) {
+    const last = [...(v.messages || [])].reverse().find(m => textOf(m).trim());
+    const preview = last ? textOf(last).trim().slice(0, 90) : "(empty)";
+    const hasOut = !!(v.completion && (v.completion.content || []).length);
+
+    list.append(el("div", {
+      class: "ver" + (v.id === state.activeVersionId ? " active" : ""),
+      onclick: (e) => { if (!e.target.closest("button")) restoreVersion(v); },
+      title: "Click to restore this version",
+    },
+      el("div", { class: "v-top" },
+        el("span", { class: "v-when", text: fmtTime(v.createdAt) }),
+        el("span", { class: "v-model", text: v.settings?.model || "" })),
+      v.label ? el("div", { class: "v-label", text: v.label }) : null,
+      el("div", { class: "v-prev", text: preview }),
+      el("div", { class: "v-foot" },
+        el("span", { text: (v.messages || []).length + " msg" }),
+        hasOut ? el("span", { text: "· has completion" }) : el("span", { text: "· no run" }),
+        el("div", { class: "v-acts" },
+          el("button", { class: "btn icon sm", title: "Label this version", text: "✎",
+            onclick: () => labelVersion(v) }),
+          el("button", { class: "btn icon sm", title: "Delete this version", text: "🗑",
+            onclick: () => removeVersion(v) })))));
+  }
+}
+
+async function labelVersion(v) {
+  const label = prompt("Label for this version", v.label || "");
+  if (label == null) return;
+  v.label = label.trim();
+  await dbPutVersion(v);
+  renderVersions();
+}
+
+async function removeVersion(v) {
+  if (!confirm("Delete this version?\n\n" + fmtTime(v.createdAt) + "\nThis cannot be undone.")) return;
+  await dbDelVersion(v.id);
+  state.versions = state.versions.filter(x => x.id !== v.id);
+  renderVersions();
+}
+
+function renderRunbar() {
+  $("#runBtn").hidden = state.running;
+  $("#stopBtn").hidden = !state.running;
+  $("#runBtn").disabled = !state.chat;
+  $("#saveVersion").disabled = !state.chat || state.running;
+
+  // The note is ellipsised (and hidden outright on a narrow top bar), so the
+  // full text always lives in the tooltip too.
+  const note = $("#runNote");
+  const setNote = (text, warn) => {
+    note.textContent = text;
+    note.title = text;
+    note.className = warn ? "note warn" : "note";
+  };
+  note.className = "note";
+  if (!state.chat) { setNote(""); return; }
+  if (state.running) { setNote("streaming…"); return; }
+
+  const d = state.chat.currentDraft;
+  const caps = modelCaps(d.settings.model);
+  const pf = prefillText(d);
+  const hasText = d.messages.some(m => textOf(m).trim());
+  if (pf && !caps.prefill) {
+    setNote("This model rejects prefill — it needs the conversation to end with a user message.", true);
+  } else if (pf) {
+    setNote("Trailing assistant turn will be sent as a prefill.");
+  } else if (hasText && draftIsDirty()) {
+    setNote("Unsaved changes — Run (or Save version) snapshots them.");
+  } else {
+    setNote("");
+  }
+}
+
+/* The top bar shows nothing about the key when all is well — ⚙ is where key
+   things live. The pill only appears as a warning when there's no key yet. */
+function renderKeyState() {
+  const pill = $("#keyState");
+  pill.hidden = !!prefs.key;
+  pill.textContent = "no API key";
+  pill.className = "pill warn";
+  pill.style.cursor = "pointer";
+}
+
+/* ─── 7. Import & backup ─────────────────────────────────────────────────── */
+
+/**
+ * Minimal, dependency-free zip reader.
+ * Walks the End of Central Directory → central directory → local headers, and
+ * inflates deflate entries with DecompressionStream("deflate-raw").
+ * Handles stored (0) and deflated (8) entries, plus zip64 offsets.
+ */
+async function readZip(buffer) {
+  const dv = new DataView(buffer);
+  const u8 = new Uint8Array(buffer);
+  const SIG_EOCD = 0x06054b50, SIG_EOCD64 = 0x06064b50, SIG_LOC64 = 0x07064b50;
+  const SIG_CD = 0x02014b50, SIG_LFH = 0x04034b50;
+
+  // The EOCD sits at the end, after a comment of up to 64 KiB.
+  let eocd = -1;
+  const floor = Math.max(0, buffer.byteLength - (66 * 1024));
+  for (let i = buffer.byteLength - 22; i >= floor; i--) {
+    if (dv.getUint32(i, true) === SIG_EOCD) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("That doesn't look like a .zip file (no end-of-central-directory record).");
+
+  let count = dv.getUint16(eocd + 10, true);
+  let cdOffset = dv.getUint32(eocd + 16, true);
+
+  // zip64: real values live in a separate record found via the locator.
+  if (count === 0xffff || cdOffset === 0xffffffff) {
+    const loc = eocd - 20;
+    if (loc >= 0 && dv.getUint32(loc, true) === SIG_LOC64) {
+      const rec = Number(dv.getBigUint64(loc + 8, true));
+      if (dv.getUint32(rec, true) === SIG_EOCD64) {
+        count = Number(dv.getBigUint64(rec + 32, true));
+        cdOffset = Number(dv.getBigUint64(rec + 48, true));
+      }
+    }
+  }
+
+  const dec = new TextDecoder("utf-8");
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > buffer.byteLength || dv.getUint32(p, true) !== SIG_CD) break;
+    const method = dv.getUint16(p + 10, true);
+    let csize = dv.getUint32(p + 20, true);
+    let usize = dv.getUint32(p + 24, true);
+    const nlen = dv.getUint16(p + 28, true);
+    const elen = dv.getUint16(p + 30, true);
+    const clen = dv.getUint16(p + 32, true);
+    let lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+
+    // zip64 extended information extra field (0x0001), if any size is maxed out.
+    if (csize === 0xffffffff || usize === 0xffffffff || lho === 0xffffffff) {
+      let q = p + 46 + nlen;
+      const end = q + elen;
+      while (q + 4 <= end) {
+        const tag = dv.getUint16(q, true), size = dv.getUint16(q + 2, true);
+        if (tag === 0x0001) {
+          let r = q + 4;
+          if (usize === 0xffffffff) { usize = Number(dv.getBigUint64(r, true)); r += 8; }
+          if (csize === 0xffffffff) { csize = Number(dv.getBigUint64(r, true)); r += 8; }
+          if (lho === 0xffffffff) { lho = Number(dv.getBigUint64(r, true)); r += 8; }
+          break;
+        }
+        q += 4 + size;
+      }
+    }
+    entries.push({ name, method, csize, usize, lho });
+    p += 46 + nlen + elen + clen;
+  }
+
+  async function extract(entry) {
+    if (dv.getUint32(entry.lho, true) !== SIG_LFH) throw new Error("Broken zip entry: " + entry.name);
+    // The local header's extra field can differ in length from the central one,
+    // so the data offset must be computed from the local header itself.
+    const nlen = dv.getUint16(entry.lho + 26, true);
+    const elen = dv.getUint16(entry.lho + 28, true);
+    const start = entry.lho + 30 + nlen + elen;
+    const raw = u8.subarray(start, start + entry.csize);
+    if (entry.method === 0) return new Uint8Array(raw);
+    if (entry.method === 8) {
+      // Cap the decompressed size — a tiny crafted entry can otherwise expand
+      // to gigabytes (zip bomb). The declared usize is checked first, then the
+      // real byte count while inflating, because the declaration can lie.
+      const MAX_EXTRACT = 256 * 1024 * 1024;
+      if (entry.usize > MAX_EXTRACT) {
+        throw new Error(`${entry.name} claims to be ${entry.usize} bytes uncompressed — refusing to unpack.`);
+      }
+      const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      const reader = stream.getReader();
+      const chunks = [];
+      let total = 0;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_EXTRACT) {
+          throw new Error(`${entry.name} expands past ${MAX_EXTRACT} bytes — refusing to unpack.`);
+        }
+        chunks.push(value);
+      }
+      const out = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+      return out;
+    }
+    throw new Error(`Unsupported compression method ${entry.method} in ${entry.name}`);
+  }
+
+  return { entries, extract };
+}
+
+/** Map one export prompt to a { chat, version } pair. */
+function promptToChat(p) {
+  const rev = p.latest_revision || {};
+  const created = toMs(p.created_at);
+  const updated = toMs(rev.created_at || p.updated_at || p.created_at);
+
+  const messages = (rev.messages || [])
+    .slice()
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    .map(m => ({
+      id: uid(),
+      role: m.role === "human" ? "user" : (m.role === "assistant" ? "assistant" : "user"),
+      content: (m.content || []).map(b => {
+        if (b.type === "thinking") {
+          return { type: "thinking", thinking: b.thinking || "", signature: b.signature || "" };
+        }
+        return { type: "text", text: b.text != null ? b.text : "" };
+      }),
+    }));
+
+  const settings = {
+    model: rev.model || prefs.lastModel,
+    maxTokens: clampMT(rev.max_tokens || 4096),
+    temperature: typeof rev.temperature === "number" ? rev.temperature : null,
+    effort: (rev.output_config && rev.output_config.effort) || "",
+    system: rev.system_prompt || "",
+  };
+
+  const name = (p.name || rev.name || "").trim() ||
+    ("Imported " + new Date(created).toLocaleDateString());
+
+  const chat = {
+    id: uid(),
+    name,
+    createdAt: created,
+    updatedAt: updated,
+    sourceUuid: p.uuid || null,
+    currentDraft: { settings: clone(settings), messages: clone(messages) },
+  };
+  const version = {
+    id: uid(),
+    chatId: chat.id,
+    createdAt: updated,
+    label: "imported from Workbench export",
+    settings,
+    messages,
+    completion: null,
+  };
+  return { chat, version };
+}
+
+async function importPromptsJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { throw new Error("That file isn't valid JSON: " + e.message); }
+
+  // A Workbench backup? Hand it off to the other importer.
+  if (data && !Array.isArray(data) && (data.app === APP_ID || data.app === LEGACY_APP_ID)) return importBackup(data);
+
+  const prompts = Array.isArray(data) ? data : (Array.isArray(data.prompts) ? data.prompts : null);
+  if (!prompts) throw new Error("Expected an array of prompts (or a Workbench backup file).");
+
+  const existing = new Set(state.chats.map(c => c.sourceUuid).filter(Boolean));
+  let added = 0, skipped = 0;
+  const pairs = [];
+  for (const p of prompts) {
+    if (p && p.uuid && existing.has(p.uuid)) { skipped++; continue; }
+    if (!p || !p.latest_revision) { skipped++; continue; }
+    const pair = promptToChat(p);
+    pairs.push(pair);
+    if (p.uuid) existing.add(p.uuid);
+    added++;
+  }
+  await txn(["chats", "versions"], "readwrite", (s) => {
+    for (const { chat, version } of pairs) { s.chats.put(chat); s.versions.put(version); }
+  });
+  afterMutation();                     // queue the file auto-save
+  state.chats.push(...pairs.map(x => x.chat));
+
+  renderChatList();
+  showOk(`Imported ${added} chat${added === 1 ? "" : "s"}`,
+    skipped ? `${skipped} skipped (already imported, or no revision).` : "");
+  if (added) await openChat(pairs[0].chat.id);   // show what just arrived
+  return { added, skipped };
+}
+
+async function importZip(buffer) {
+  const zip = await readZip(buffer);
+  const target =
+    zip.entries.find(e => e.name === "workbench/prompts.json") ||
+    zip.entries.find(e => e.name.replace(/\\/g, "/").endsWith("/prompts.json")) ||
+    zip.entries.find(e => e.name === "prompts.json") ||
+    zip.entries.find(e => e.name.endsWith(".json") && !e.name.startsWith("__MACOSX"));
+  if (!target) {
+    throw new Error("No prompts.json inside that zip. It contains: " +
+      zip.entries.map(e => e.name).slice(0, 12).join(", "));
+  }
+  const bytes = await zip.extract(target);
+  return importPromptsJson(new TextDecoder("utf-8").decode(bytes));
+}
+
+async function handleFile(file) {
+  try {
+    const isZip = /\.zip$/i.test(file.name) || file.type === "application/zip";
+    if (isZip) await importZip(await file.arrayBuffer());
+    else await importPromptsJson(await file.text());
+  } catch (e) {
+    showError("Import failed", String(e.message || e));
+  }
+}
+
+/* ── Full backup: every chat + every version, in the nested shape ────────── */
+
+/** The complete backup document: every chat with its versions nested inside. */
+async function buildBackupPayload() {
+  const chats = await dbAllChats();
+  const versions = await dbAllVersions();
+  const byChat = new Map(chats.map(c => [c.id, { ...c, versions: [] }]));
+  const orphans = [];
+  for (const v of versions) {
+    const c = byChat.get(v.chatId);
+    if (c) c.versions.push(v); else orphans.push(v);
+  }
+  for (const c of byChat.values()) c.versions.sort((a, b) => a.createdAt - b.createdAt);
+
+  return {
+    app: APP_ID,
+    formatVersion: 1,
+    exportedAt: new Date().toISOString(),
+    chats: [...byChat.values()],
+    orphanVersions: orphans,
+  };
+}
+
+async function exportAll() {
+  const payload = await buildBackupPayload();
+  const versions = payload.chats.reduce((n, c) => n + c.versions.length, 0) +
+                   payload.orphanVersions.length;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const a = el("a", { href: URL.createObjectURL(blob), download: `workbench-backup-${stamp}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  showOk("Backup downloaded",
+    `${payload.chats.length} chats, ${versions} versions.`);
+}
+
+/* ─── 7b. File-backed auto-save ──────────────────────────────────────────────
+   Optional, Chromium-desktop only (File System Access API). The user picks a real
+   file once; from then on the same backup document is written to it a couple of
+   seconds after every change, so the data lives somewhere they can see, copy and
+   back up — not only inside a browser profile.
+
+   Two rules this code never breaks:
+     1. Writes are serialised. One write in flight at a time, with a single
+        trailing re-run if changes arrived meanwhile.
+     2. Nothing is ever silently clobbered — in either direction. Linking a file
+        that already holds data offers to merge it in first, and a linked file
+        that looks newer than this browser offers a merge on startup. Merging
+        uses the same importBackup() rules as the manual Restore button: add
+        what's missing, newer copy wins, never delete.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+const FILE_SAVE_DELAY = 2000;
+const SAVE_FILE_KEY = "saveFileHandle";
+
+const fileSync = {
+  handle: null,
+  status: "unsupported",   // unsupported | none | ready | needs-permission | saving | error
+  detail: "",
+  inFlight: false,
+  pending: false,
+  timer: null,
+  lastSavedAt: 0,
+  lastErrorAt: 0,
+};
+
+const fileSyncSupported = () => typeof window.showSaveFilePicker === "function";
+
+/** Called after every database mutation (see dbPutChat / dbPutVersion / …). */
+function afterMutation(value) {
+  scheduleFileSave();
+  return value;
+}
+
+function scheduleFileSave() {
+  if (fileSync.status !== "ready" && fileSync.status !== "saving") return;
+  clearTimeout(fileSync.timer);
+  fileSync.timer = setTimeout(() => { flushFileSave(); }, FILE_SAVE_DELAY);
+}
+
+/** Write the whole backup document to the linked file. Never overlaps itself. */
+async function flushFileSave() {
+  if (!fileSync.handle) return;
+  if (fileSync.status !== "ready" && fileSync.status !== "saving") return;
+  if (fileSync.inFlight) { fileSync.pending = true; return; }   // coalesce
+
+  fileSync.inFlight = true;
+  fileSync.status = "saving";
+  renderSyncState();
+  try {
+    const payload = await buildBackupPayload();
+    const writable = await fileSync.handle.createWritable();
+    await writable.write(JSON.stringify(payload, null, 2));
+    await writable.close();
+    fileSync.lastSavedAt = Date.now();
+    fileSync.status = "ready";
+    fileSync.detail = "";
+  } catch (e) {
+    // Most often: permission lapsed, or the file/drive went away.
+    const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    fileSync.detail = String(e && e.message || e);
+    if (denied) {
+      fileSync.status = "needs-permission";       // needs a click; stop trying
+    } else {
+      // Could be transient (a synced folder mid-sync, a drive briefly away):
+      // stay enabled so the next change retries, but don't shout every time.
+      fileSync.status = "error";
+      const quiet = Date.now() - (fileSync.lastErrorAt || 0) < 60000;
+      fileSync.lastErrorAt = Date.now();
+      if (!quiet) showError("Couldn't write the save file",
+        fileSync.detail + "\n\nYour work is still saved in this browser. " +
+        "The next change will try the file again.");
+      setTimeout(() => {
+        if (fileSync.status === "error") { fileSync.status = "ready"; renderSyncState(); scheduleFileSave(); }
+      }, 15000);
+    }
+  } finally {
+    fileSync.inFlight = false;
+    renderSyncState();
+    if (fileSync.pending) {          // exactly one trailing re-run
+      fileSync.pending = false;
+      scheduleFileSave();
+    }
+  }
+}
+
+async function savePermission(request) {
+  const h = fileSync.handle;
+  if (!h) return "none";
+  const opts = { mode: "readwrite" };
+  try {
+    let p = h.queryPermission ? await h.queryPermission(opts) : "granted";
+    if (p !== "granted" && request && h.requestPermission) p = await h.requestPermission(opts);
+    return p;
+  } catch (e) {
+    return "denied";
+  }
+}
+
+/** Read and parse the linked file, or null if it's empty / not ours. */
+async function readLinkedFile() {
+  try {
+    const file = await fileSync.handle.getFile();
+    if (!file.size) return null;
+    const data = JSON.parse(await file.text());
+    return (data && (data.app === APP_ID || data.app === LEGACY_APP_ID)) ? data : null;
+  } catch { return null; }
+}
+
+const countBackup = (d) => ({
+  chats: (d.chats || []).length,
+  versions: (d.chats || []).reduce((n, c) => n + ((c.versions || []).length), 0) +
+            ((d.orphanVersions || []).length),
+  newest: Math.max(0, ...(d.chats || []).map(c => toMs(c.updatedAt))),
+});
+
+/**
+ * Link (or relink) a save file. If the chosen file already holds a backup,
+ * offer to merge it in BEFORE the first write — otherwise picking an existing
+ * backup file on a fresh browser would overwrite it with an empty database.
+ */
+async function linkSaveFile() {
+  if (!fileSyncSupported()) return;
+  let handle;
+  try {
+    handle = await window.showSaveFilePicker({
+      suggestedName: "workbench-data.json",
+      types: [{ description: "Workbench data", accept: { "application/json": [".json"] } }],
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") return;      // the user closed the picker
+    showError("Couldn't open the file picker", String(e.message || e));
+    return;
+  }
+
+  fileSync.handle = handle;
+  fileSync.status = "ready";
+
+  const existing = await readLinkedFile();
+  if (existing) {
+    const n = countBackup(existing);
+    if (n.chats || n.versions) {
+      const merge = confirm(
+        `That file already holds ${n.chats} chats and ${n.versions} versions.\n\n` +
+        `OK — merge them into this browser first (nothing is lost on either side).\n` +
+        `Cancel — leave this browser as it is and overwrite the file on the next save.`);
+      if (merge) await importBackup(existing);
+    }
+  } else {
+    // Not a Workbench backup. A mis-picked file must never be silently
+    // destroyed — the first auto-save would truncate and overwrite it.
+    try {
+      const f = await handle.getFile();
+      if (f.size > 0 && !confirm(
+        `"${handle.name}" already has ${Math.max(1, Math.round(f.size / 1024))} KB of content ` +
+        `this app doesn't recognise.\n\n` +
+        `OK — overwrite it with this browser's Workbench data.\n` +
+        `Cancel — don't link this file.`)) {
+        fileSync.handle = null;
+        fileSync.status = fileSyncSupported() ? "none" : "unsupported";
+        renderSyncState();
+        return;
+      }
+    } catch { /* unreadable → linking proceeds; the first write will surface it */ }
+  }
+
+  try {
+    // File handles are structured-cloneable, so IndexedDB can remember this
+    // one across restarts (subject to a permission re-grant).
+    await dbPutMeta({ key: SAVE_FILE_KEY, handle, linkedAt: Date.now(), name: handle.name });
+  } catch (e) {
+    showError("Couldn't remember that file",
+      "Auto-save works for this session, but the link won't survive a restart: " + (e.message || e));
+  }
+  await flushFileSave();
+  renderSyncState();
+  dbStats();
+  if (fileSync.status === "ready") {
+    showOk("Save file linked", `Changes are written to ${handle.name} automatically.`);
+  }
+}
+
+async function unlinkSaveFile() {
+  if (!confirm("Stop auto-saving to the linked file?\n\nThe file itself is left exactly as it is.")) return;
+  clearTimeout(fileSync.timer);
+  fileSync.handle = null;
+  fileSync.status = fileSyncSupported() ? "none" : "unsupported";
+  fileSync.detail = "";
+  await dbDelMeta(SAVE_FILE_KEY);
+  renderSyncState();
+  dbStats();
+  showOk("Save file unlinked", "Use Back up all for manual backups.");
+}
+
+/** Re-grant permission — must be called from a real click (Chrome requires it). */
+async function reconnectSaveFile() {
+  const p = await savePermission(true);
+  if (p === "granted") {
+    fileSync.status = "ready";
+    renderSyncState();
+    await offerFileMerge();
+    await flushFileSave();
+    showOk("Save file reconnected", "Auto-saving again.");
+  } else {
+    showError("Permission not granted",
+      "The browser wouldn't reconnect the file. Try Settings → Create or pick a save file… to choose it again.");
+  }
+}
+
+/** If the linked file looks newer than this browser, offer to merge it in. */
+async function offerFileMerge() {
+  const data = await readLinkedFile();
+  if (!data) return;
+  const fileCount = countBackup(data);
+  const localCount = countBackup(await buildBackupPayload());
+  const newer = fileCount.versions > localCount.versions ||
+                fileCount.chats > localCount.chats ||
+                fileCount.newest > localCount.newest;
+  if (!newer) return;
+
+  const b = banner("", "The save file has newer work in it",
+    `The file holds ${fileCount.chats} chats and ${fileCount.versions} versions; ` +
+    `this browser has ${localCount.chats} and ${localCount.versions}. Merging adds what's ` +
+    `missing here and keeps the newer copy of anything in both — nothing is deleted.`);
+  bannerAction(b, "Merge from file", async () => { b.remove(); await importBackup(data); });
+}
+
+async function initFileSync() {
+  if (!fileSyncSupported()) {
+    fileSync.status = "unsupported";
+    renderSyncState();
+    return;
+  }
+  const rec = await dbGetMeta(SAVE_FILE_KEY).catch(() => null);
+  if (!rec || !rec.handle) {
+    fileSync.status = "none";
+    renderSyncState();
+    return;
+  }
+  fileSync.handle = rec.handle;
+  // queryPermission only — requestPermission needs a user gesture, so if the
+  // grant has lapsed we show a Reconnect button instead of failing quietly.
+  const p = await savePermission(false);
+  if (p === "granted") {
+    fileSync.status = "ready";
+    renderSyncState();
+    await offerFileMerge();
+  } else {
+    fileSync.status = "needs-permission";
+    renderSyncState();
+    const b = banner("", "Reconnect your save file",
+      `Chrome needs one click to restore access to ${rec.name || "the linked file"} ` +
+      `after a restart. Until then, changes are saved in this browser only.`);
+    bannerAction(b, "Reconnect", async () => { b.remove(); await reconnectSaveFile(); });
+  }
+}
+
+/** Ask the browser not to evict this data. Safe to call on every start. */
+async function requestPersistence() {
+  try {
+    if (!navigator.storage || !navigator.storage.persist) return null;
+    const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    const granted = already || await navigator.storage.persist();
+    state.persisted = granted;
+    dbStats();
+    return granted;
+  } catch { return null; }
+}
+
+const SYNC_LABEL = {
+  unsupported: ["", ""],
+  none:               ["file: not linked", "Auto-save to a file isn't set up. Settings → Create or pick a save file…"],
+  ready:              ["file: saved ✓", "Changes are written to the linked file automatically."],
+  saving:             ["file: saving…", "Writing to the linked file."],
+  "needs-permission": ["file: reconnect", "Click to restore access to the linked save file."],
+  error:              ["file: error", "The last write failed."],
+};
+
+function renderSyncState() {
+  const node = $("#syncState");
+  if (!node) return;
+  const [label, tip] = SYNC_LABEL[fileSync.status] || ["", ""];
+  node.textContent = label;
+  node.title = fileSync.detail ? tip + " — " + fileSync.detail : tip;
+  node.hidden = !label;
+  node.className = "sync-state" +
+    (fileSync.status === "needs-permission" || fileSync.status === "error" ? " warn" : "");
+  const btn = $("#linkFileBtn");
+  if (btn) btn.textContent = fileSync.handle ? "Change save file…" : "Create or pick a save file…";
+  const un = $("#unlinkFileBtn");
+  if (un) un.hidden = !fileSync.handle;
+  const re = $("#reconnectFileBtn");
+  if (re) re.hidden = fileSync.status !== "needs-permission";
+}
+
+/*
+   Backups come from arbitrary files, so nothing render depends on can be
+   trusted: normalise what can be repaired, drop records that can't. A crafted
+   or corrupted backup must never brick boot() or pin future merges with an
+   absurd timestamp.
+*/
+function importMs(v) {
+  const n = toMs(v);
+  const cap = Date.now() + 86400000;          // tolerate a day of clock skew
+  return Number.isFinite(n) && n > 0 ? Math.min(n, cap) : Date.now();
+}
+
+function sanitizeChat(raw) {
+  if (!raw || typeof raw !== "object" || typeof raw.id !== "string" || !raw.id) return null;
+  const c = { ...raw };
+  if (typeof c.name !== "string") c.name = "";
+  c.createdAt = importMs(c.createdAt);
+  c.updatedAt = importMs(c.updatedAt);
+  const d = (c.currentDraft && typeof c.currentDraft === "object") ? { ...c.currentDraft } : {};
+  if (!d.settings || typeof d.settings !== "object") d.settings = newDraft().settings;
+  if (!Array.isArray(d.messages)) d.messages = [newMessage("user", "")];
+  c.currentDraft = d;
+  return c;
+}
+
+function sanitizeVersion(raw, fallbackChatId) {
+  if (!raw || typeof raw !== "object" || typeof raw.id !== "string" || !raw.id) return null;
+  const v = { ...raw };
+  v.chatId = (typeof v.chatId === "string" && v.chatId) ? v.chatId : fallbackChatId;
+  if (!v.chatId) return null;
+  v.createdAt = importMs(v.createdAt);
+  if (!v.settings || typeof v.settings !== "object") v.settings = newDraft().settings;
+  if (!Array.isArray(v.messages)) v.messages = [];
+  return v;
+}
+
+/** Merge a backup in: chats by id (newer updatedAt wins), versions by id (union). */
+async function importBackup(data) {
+  if (!Array.isArray(data.chats)) throw new Error("That backup has no chats array.");
+  const existingChats = new Map((await dbAllChats()).map(c => [c.id, c]));
+  const existingVer = new Set((await dbAllVersions()).map(v => v.id));
+
+  let newChats = 0, updatedChats = 0, newVersions = 0;
+  const chatPuts = [], verPuts = [];
+
+  for (const raw of data.chats) {
+    const incoming = sanitizeChat(raw);
+    if (!incoming) continue;
+    const versions = incoming.versions || [];
+    delete incoming.versions;
+
+    const mine = existingChats.get(incoming.id);
+    if (!mine) { chatPuts.push(incoming); newChats++; }
+    else if (incoming.updatedAt > mine.updatedAt) { chatPuts.push(incoming); updatedChats++; }
+
+    for (const raw2 of versions) {
+      const v = sanitizeVersion(raw2, incoming.id);
+      if (!v || existingVer.has(v.id)) continue;
+      verPuts.push(v);
+      existingVer.add(v.id);
+      newVersions++;
+    }
+  }
+  for (const raw2 of (data.orphanVersions || [])) {
+    const v = sanitizeVersion(raw2, "");
+    if (v && !existingVer.has(v.id)) { verPuts.push(v); existingVer.add(v.id); newVersions++; }
+  }
+
+  await txn(["chats", "versions"], "readwrite", (s) => {
+    for (const c of chatPuts) s.chats.put(c);
+    for (const v of verPuts) s.versions.put(v);
+  });
+  afterMutation();                     // queue the file auto-save
+
+  state.chats = await dbAllChats();
+  if (state.chat) {
+    const again = state.chats.find(c => c.id === state.chat.id);
+    if (again) await openChat(again.id); else { state.chat = null; renderAll(); }
+  } else renderAll();
+
+  showOk("Backup merged",
+    `${newChats} new chats, ${updatedChats} updated, ${newVersions} new versions.`);
+  return { newChats, updatedChats, newVersions };
+}
+
+/* ─── 8. Wiring & boot ───────────────────────────────────────────────────── */
+
+function applyTheme() {
+  const t = prefs.theme;
+  if (t === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────
+   Two modes:
+     split   — conversation and Response side by side, each with its own
+               scrollbar, Run in the always-visible top bar (the old Workbench).
+     stacked — one scrolling column with the response underneath (narrow
+               windows, phones).
+   Until the user picks one explicitly, the mode follows the window width.
+   After that their choice wins and the width is never consulted again.
+   ─────────────────────────────────────────────────────────────────────────*/
+const SPLIT_MIN_WIDTH = 1100;   // window width that starts life in split mode
+const SIDEBAR_W = 264, RAIL_W = 312;
+const SPLIT_WANTS_MAIN = 700;   // main width the auto choice wants for split
+// Below this, split is refused at any setting: it's also the width at which the
+// top bar can still hold ☰, title, Run, the estimate, the key pill and the
+// three toggles without clipping (~580px of controls plus breathing room).
+const SPLIT_FLOOR_MAIN = 620;
+
+/**
+ * Width the editor actually gets — the window minus whichever side panels are
+ * showing. Split mode has to be decided on THIS, not on window width: hiding
+ * the sidebar frees 264px and hiding the versions rail frees 312px, which is
+ * the difference between two cramped columns and two comfortable ones.
+ */
+function availableMainWidth() {
+  const sb = document.body.classList.contains("no-sidebar") ? 0 : SIDEBAR_W;
+  const rail = document.body.classList.contains("no-rail") ? 0 : RAIL_W;
+  return Math.max(0, window.innerWidth - sb - rail);
+}
+
+function currentLayout() {
+  const avail = availableMainWidth();
+  // A hard floor, even against an explicit preference — the user's choice is
+  // remembered and comes back as soon as there's room for it.
+  if (avail < SPLIT_FLOOR_MAIN) return "stacked";
+  return prefs.layout || (avail >= SPLIT_WANTS_MAIN ? "split" : "stacked");
+}
+
+function applyLayout() {
+  const split = currentLayout() === "split";
+  document.body.classList.toggle("split", split);
+
+  // Move the completion card and the run controls to where this mode wants them.
+  const card = $("#completion");
+  const cardHome = split ? $("#responseBody") : $("#stackedSlot");
+  if (card.parentElement !== cardHome) cardHome.prepend(card);
+
+  const runbar = $("#runbar");
+  const runHome = split ? $("#topRunSlot") : $("#column");
+  if (runbar.parentElement !== runHome) {
+    runHome.append(runbar);                       // #column: last child, as before
+  }
+
+  $("#toggleLayout").textContent = split ? "▥" : "▤";
+  $("#toggleLayout").title = split
+    ? "Split view — switch to a single stacked column"
+    : "Stacked view — switch to split panes";
+  renderCompletion();
+}
+
+/** The element that scrolls the response, which differs per layout mode. */
+function completionScroller() {
+  return document.body.classList.contains("split") ? $("#responseBody") : $("#scroller");
+}
+
+function openSettings() {
+  $("#apiKeyInput").value = prefs.key;
+  $("#showKey").checked = false;
+  $("#apiKeyInput").type = "password";
+  const theme = $(`input[name="themeSel"][value="${prefs.theme}"]`) ||
+                $('input[name="themeSel"][value="system"]');
+  theme.checked = true;
+  $("#keyEphemeral").checked = prefs.keyEphemeral;
+  renderSyncState();
+  dbStats();
+  $("#settingsDlg").showModal();
+}
+
+async function dbStats() {
+  // The auto-save explainer, which depends on browser support.
+  const help = $("#fileHelp");
+  if (help) {
+    if (!fileSyncSupported()) {
+      help.textContent =
+        "Your browser doesn't support writing to a chosen file (this is a Chrome/Edge " +
+        "desktop feature). Use Back up all and Restore instead — they work everywhere, " +
+        "including on your phone.";
+      $("#linkFileBtn").disabled = true;
+    } else if (fileSync.handle) {
+      const when = fileSync.lastSavedAt ? " Last written " + fmtTime(fileSync.lastSavedAt) + "." : "";
+      help.textContent =
+        (fileSync.status === "needs-permission"
+          ? "Access to the linked file needs one click to restore after a browser restart."
+          : "Every change is written to the linked file a couple of seconds later.") + when;
+    } else {
+      help.textContent =
+        "Choose where a save file should live — a brand-new file or an existing backup — " +
+        "and every change is saved into it automatically, on top of the copy kept in " +
+        "this browser. Handy for keeping your work in a synced folder.";
+    }
+  }
+
+  try {
+    const chats = await dbAllChats();
+    const versions = await dbAllVersions();
+    let usage = "";
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      if (est.usage) usage = ` · about ${(est.usage / 1048576).toFixed(1)} MB stored`;
+    }
+    const persisted = state.persisted === true
+      ? "The browser has promised not to evict this data: yes."
+      : state.persisted === false
+        ? "The browser has promised not to evict this data: no — keep backups."
+        : "";
+    $("#dbStats").textContent =
+      `${chats.length} chats, ${versions.length} versions in this browser${usage}. ${persisted}`;
+  } catch { $("#dbStats").textContent = ""; }
+}
+
+async function loadModels(force) {
+  // state.models holds ONLY what the API told us; the picker merges in the
+  // hardcoded and custom ids itself (see modelOptions), so a model missing
+  // from the API listing — a deprecated one the account still has access to — never
+  // disappears from the list.
+  const cached = prefs.models;
+  // Keep showing the cached list even on a forced refresh, so a failed refresh
+  // doesn't leave the user worse off than before they pressed the button.
+  state.models = (cached && cached.list && cached.list.length) ? cached.list : [];
+  renderSettingsBar();
+
+  if (!prefs.key) return;
+  const stale = !cached || force || (Date.now() - (cached.at || 0) > 6 * 3600 * 1000);
+  if (!stale) return;
+  try {
+    const list = await fetchModels();
+    if (list.length) {
+      state.models = list;
+      prefs.models = { at: Date.now(), list };
+      renderSettingsBar();
+      if (force) showOk("Model list updated", `${list.length} models from the API.`);
+    }
+  } catch (e) {
+    if (force) showError("Couldn't load the model list", String(e.message || e));
+    // Otherwise stay quiet: the fallback list works fine offline.
+  }
+}
+
+function wire() {
+  // Sidebar / rail / theme toggles
+  // Side panels: the user's explicit choice if they have made one, otherwise collapsed
+  // on a narrow window. (Doing this in JS, not a media query, keeps the ☰ / ⧉
+  // buttons working at every width.)
+  const ui = prefs.ui;
+  document.body.classList.toggle("no-sidebar",
+    ui.noSidebar !== undefined ? !!ui.noSidebar : window.innerWidth < 820);
+  document.body.classList.toggle("no-rail",
+    ui.noRail !== undefined ? !!ui.noRail : window.innerWidth < SPLIT_MIN_WIDTH);
+  // Showing or hiding a side panel changes how much room the editor has, so the
+  // layout mode is re-evaluated each time (see availableMainWidth).
+  $("#toggleSidebar").onclick = () => {
+    document.body.classList.toggle("no-sidebar");
+    prefs.ui = { ...prefs.ui, noSidebar: document.body.classList.contains("no-sidebar") };
+    applyLayout();
+  };
+  $("#toggleRail").onclick = () => {
+    document.body.classList.toggle("no-rail");
+    prefs.ui = { ...prefs.ui, noRail: document.body.classList.contains("no-rail") };
+    applyLayout();
+  };
+  $("#toggleLayout").onclick = () => {
+    // First click also *fixes* the choice: from here on, width no longer decides.
+    prefs.layout = currentLayout() === "split" ? "stacked" : "split";
+    applyLayout();
+  };
+  // Re-evaluate on resize: this follows the width until the user chooses, and also
+  // enforces the narrow-window floor afterwards (the choice is remembered and
+  // comes back as soon as there's room for it again).
+  window.addEventListener("resize", debounce(() => {
+    if ((currentLayout() === "split") !== document.body.classList.contains("split")) applyLayout();
+  }, 200));
+
+  // Chats
+  $("#newChat").onclick = createChat;
+  $("#chatTitle").oninput = (e) => {
+    if (!state.chat) return;
+    state.chat.name = e.target.value;
+    saveChatSoon();
+  };
+
+  // Settings dialog
+  $("#settingsBtn").onclick = openSettings;
+  $("#topSettingsBtn").onclick = openSettings;
+  $("#keyState").onclick = openSettings;
+
+  // Theme applies the moment it's picked — no Save needed for a look-and-feel
+  // choice, and the dialog stays open so it's easy to compare.
+  for (const r of $$('input[name="themeSel"]')) {
+    r.onchange = () => { prefs.theme = r.value; applyTheme(); };
+  }
+
+  // Applies immediately: ticking it must pull the key out of storage right
+  // now, not on the next Save.
+  $("#keyEphemeral").onchange = (e) => {
+    const k = prefs.key;
+    prefs.keyEphemeral = e.target.checked;
+    prefs.key = k;               // re-store through the setter → moves it
+    renderKeyState();
+  };
+
+  // File auto-save (all of these are real clicks, which is what the browser
+  // requires before it will grant or restore file access).
+  $("#linkFileBtn").onclick = linkSaveFile;
+  $("#unlinkFileBtn").onclick = unlinkSaveFile;
+  $("#reconnectFileBtn").onclick = reconnectSaveFile;
+  $("#syncState").onclick = () => {
+    if (fileSync.status === "needs-permission") reconnectSaveFile();
+    else openSettings();
+  };
+  $("#closeSettings").onclick = () => $("#settingsDlg").close();
+  $("#showKey").onchange = (e) => { $("#apiKeyInput").type = e.target.checked ? "text" : "password"; };
+  $("#saveSettings").onclick = async () => {
+    prefs.key = $("#apiKeyInput").value.trim();
+    $("#settingsDlg").close();
+    renderKeyState();
+    renderRunbar();
+    scheduleEstimate();           // a key means we can now get the exact count
+    await loadModels(true);
+  };
+  $("#testKey").onclick = async () => {
+    const key = $("#apiKeyInput").value.trim();
+    if (!key) { showError("No key to test", "Paste a key first."); return; }
+    const saved = prefs.key;
+    prefs.key = key;
+    try {
+      const list = await fetchModels();
+      showOk("Key works", `${list.length} models available.`);
+    } catch (e) {
+      showError("Key test failed", String(e.message || e));
+    } finally {
+      prefs.key = saved;   // Save is the only thing that persists a key
+    }
+  };
+
+  // Settings bar controls
+  $("#modelSel").onchange = (e) => {
+    const s = state.chat.currentDraft.settings;
+    let id = e.target.value;
+    if (id === CUSTOM_MODEL_OPTION) {
+      const typed = prompt(
+        "Model id to use for this chat\n\n" +
+        "Any id your account can call — including deprecated models that no longer\n" +
+        "appear in the API's list, e.g. claude-3-opus-20240229.", s.model || "");
+      if (!typed || !typed.trim()) { e.target.value = s.model; return; }
+      id = typed.trim();
+      const customs = prefs.customModels;
+      if (!customs.includes(id)) prefs.customModels = [...customs, id];
+    }
+    s.model = id;
+    prefs.lastModel = id;
+    renderSettingsBar(); renderMessages(); renderRunbar(); saveChatSoon();
+  };
+  $("#refreshModels").onclick = () => loadModels(true);
+
+  $("#maxTokRange").oninput = (e) => {
+    const v = sliderToMT(Number(e.target.value));
+    state.chat.currentDraft.settings.maxTokens = v;
+    $("#maxTokNum").value = v;
+    saveChatSoon();
+  };
+  $("#maxTokNum").onchange = (e) => {
+    const v = clampMT(Number(e.target.value));
+    state.chat.currentDraft.settings.maxTokens = v;
+    e.target.value = v;
+    $("#maxTokRange").value = mtToSlider(v);
+    saveChatSoon();
+  };
+
+  $("#tempOn").onchange = (e) => {
+    // `false` (not null) records "turned off here, on purpose" so the default
+    // can't quietly switch it back on when the chat is reopened.
+    state.chat.currentDraft.settings.temperature =
+      e.target.checked ? Number($("#tempNum").value || TEMP_DEFAULT) : false;
+    renderSettingsBar(); renderRunbar(); saveChatSoon();
+  };
+  const setTemp = (v) => {
+    const t = Math.min(1, Math.max(0, Number(v)));
+    state.chat.currentDraft.settings.temperature = t;
+    $("#tempRange").value = t; $("#tempNum").value = t;
+    saveChatSoon();
+  };
+  $("#tempRange").oninput = (e) => setTemp(e.target.value);
+  $("#tempNum").onchange = (e) => setTemp(e.target.value);
+  $("#effortSel").onchange = (e) => {
+    state.chat.currentDraft.settings.effort = e.target.value;
+    renderRunbar(); saveChatSoon();
+  };
+
+  // System prompt
+  $("#sysText").oninput = (e) => {
+    state.chat.currentDraft.settings.system = e.target.value;
+    autoGrow(e.target);
+    $("#sysHint").textContent = e.target.value.length ? nfmt(e.target.value.length) + " chars" : "";
+    renderRunbarSoon(); saveChatSoon();
+  };
+  $("#sysToggle").onclick = () => {
+    const w = $("#sysWrap");
+    const hidden = w.hasAttribute("hidden");
+    if (hidden) { w.removeAttribute("hidden"); $("#sysToggle").textContent = "hide"; autoGrow($("#sysText")); }
+    else { w.setAttribute("hidden", ""); $("#sysToggle").textContent = "show"; }
+    prefs.ui = { ...prefs.ui, sysHidden: !hidden };
+  };
+  if (prefs.ui.sysHidden) { $("#sysWrap").setAttribute("hidden", ""); $("#sysToggle").textContent = "show"; }
+
+  // Messages
+  const addMsg = (role) => {
+    state.chat.currentDraft.messages.push(newMessage(role, ""));
+    renderMessages(); renderRunbar(); saveChatSoon();
+    const tas = $$("#messages textarea");
+    tas[tas.length - 1]?.focus();
+  };
+  $("#addUser").onclick = () => addMsg("user");
+  $("#addAssistant").onclick = () => addMsg("assistant");
+
+  // Run
+  $("#runBtn").onclick = run;
+  $("#stopBtn").onclick = stopRun;
+  $("#saveVersion").onclick = async () => {
+    if (!draftIsDirty()) { showOk("Already saved", "This state matches the newest version."); return; }
+    const v = await snapshot("saved by hand");
+    showOk("Version saved", fmtTime(v.createdAt));
+    renderRunbar();
+  };
+  $("#addToConv").onclick = addToConversation;
+  $("#copyOut").onclick = async () => {
+    const c = state.completion; if (!c) return;
+    const text = (c.prefill || "") +
+      (c.content || []).filter(b => b && b.type === "text").map(b => b.text || "").join("");
+    try { await navigator.clipboard.writeText(text); showOk("Copied", ""); }
+    catch { showError("Copy failed", "Your browser blocked clipboard access — select the text instead."); }
+  };
+
+  // Import / backup
+  $("#importBtn").onclick = () => $("#filePick").click();
+  $("#restoreAll").onclick = () => $("#filePick").click();
+  $("#exportAll").onclick = exportAll;
+  // The same two actions, reachable from ⚙ Settings — the sidebar can be
+  // hidden, and backups must never be findable only in a hidden panel.
+  $("#restoreAllDlg").onclick = () => $("#filePick").click();
+  $("#exportAllDlg").onclick = exportAll;
+  $("#filePick").onchange = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (f) await handleFile(f);
+  };
+
+  // Drag & drop anywhere in the window
+  let dragDepth = 0;
+  window.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer || ![...e.dataTransfer.types].includes("Files")) return;
+    dragDepth++; $("#dropzone").classList.add("on");
+  });
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#dropzone").classList.remove("on"); } });
+  window.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dragDepth = 0; $("#dropzone").classList.remove("on");
+    const f = e.dataTransfer?.files?.[0];
+    if (f) await handleFile(f);
+  });
+
+  // Keyboard
+  window.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key === "Enter") { e.preventDefault(); state.running ? stopRun() : run(); }
+    else if (mod && e.shiftKey && (e.key === "N" || e.key === "n")) { e.preventDefault(); createChat(); }
+    else if (e.key === "Escape" && state.running) { stopRun(); }
+  });
+
+  // Draft saves are debounced, so flush them whenever the tab is leaving or
+  // being hidden — closing a window mid-sentence should never cost a sentence.
+  // Some browsers only grant persistent storage once the site has been used.
+  window.addEventListener("pointerdown",
+    () => { if (state.persisted !== true) requestPersistence(); }, { once: true });
+
+  const flush = () => { if (state.chat) { try { dbPutChat(state.chat); } catch { /* best effort */ } } };
+  window.addEventListener("beforeunload", flush);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
+  window.addEventListener("blur", flush);
+}
+
+async function boot() {
+  applyTheme();
+  wire();
+  $("#appVersion").textContent = "claude-local-workbench v" + APP_VERSION;
+  applyLayout();
+  renderKeyState();
+
+  try {
+    db = await openDB();
+  } catch (e) {
+    showError("Storage unavailable", "IndexedDB could not be opened, so nothing can be saved: " + e);
+    return;
+  }
+
+  await migrateLegacyDB();
+  state.chats = await dbAllChats();
+
+  const wanted = prefs.lastChat && state.chats.find(c => c.id === prefs.lastChat);
+  const newest = [...state.chats].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  if (wanted) await openChat(wanted.id);
+  else if (newest) await openChat(newest.id);
+  else await createChat();
+
+  // Not awaited: the chat should be on screen immediately, and the picker
+  // already works from the cached/built-in list while this lands.
+  loadModels(false);
+  initFileSync();
+  requestPersistence();
+
+  if (!prefs.key) {
+    banner("", "Welcome",
+      "Add your Anthropic API key in Settings to start running prompts. " +
+      "Everything else — importing, browsing, editing — works without one.");
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

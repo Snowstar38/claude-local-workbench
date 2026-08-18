@@ -1,0 +1,175 @@
+[
+  {
+    "uuid": "11111111-1111-4111-8111-111111111111",
+    "name": "Lighthouse keeper — opening scene",
+    "workspace_uuid": "00000000-0000-4000-8000-000000000000",
+    "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+    "created_at": "2024-04-02T10:15:00.000000+00:00",
+    "updated_at": "2024-04-02T11:02:31.000000+00:00",
+    "latest_revision": {
+      "uuid": "11111111-2222-4222-8222-222222222222",
+      "name": "Lighthouse keeper — opening scene",
+      "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+      "created_at": "2024-04-02T11:02:31.000000+00:00",
+      "system_prompt": "You are a patient co-writer. Match the user's voice, never summarise what they just wrote back at them, and end every passage on an image rather than a conclusion.",
+      "model": "claude-3-opus-20240229",
+      "temperature": 1.0,
+      "max_tokens": 4096,
+      "variables": [],
+      "tools": [],
+      "forced_tool": null,
+      "thinking": null,
+      "output_config": null,
+      "messages": [
+        {
+          "uuid": "11111111-3333-4333-8333-000000000001",
+          "index": 0,
+          "role": "human",
+          "content": [
+            {
+              "type": "text",
+              "text": "Let's open the lighthouse story. Two paragraphs, close third person, no dialogue yet.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        },
+        {
+          "uuid": "11111111-3333-4333-8333-000000000002",
+          "index": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "The lamp had been out for six days before anyone on shore thought to row over.\n\nMaren counted the days the way she counted everything that winter: in lengths of wick, in the slow tarnish spreading across the brass, in the number of times she climbed the stairs without deciding to.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        },
+        {
+          "uuid": "11111111-3333-4333-8333-000000000003",
+          "index": 2,
+          "role": "human",
+          "content": [
+            {
+              "type": "text",
+              "text": "Good. Keep going — but let the weather in.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "uuid": "22222222-1111-4111-8111-111111111111",
+    "name": "Notes on an argument I keep losing",
+    "workspace_uuid": "00000000-0000-4000-8000-000000000000",
+    "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+    "created_at": "2026-01-18T21:40:00.000000+00:00",
+    "updated_at": "2026-01-18T22:05:12.000000+00:00",
+    "latest_revision": {
+      "uuid": "22222222-2222-4222-8222-222222222222",
+      "name": "Notes on an argument I keep losing",
+      "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+      "created_at": "2026-01-18T22:05:12.000000+00:00",
+      "system_prompt": "",
+      "model": "claude-fable-5",
+      "temperature": 1.0,
+      "max_tokens": 32000,
+      "variables": [],
+      "tools": [],
+      "forced_tool": null,
+      "thinking": { "type": "adaptive", "display": null },
+      "output_config": { "effort": "high" },
+      "messages": [
+        {
+          "uuid": "22222222-3333-4333-8333-000000000001",
+          "index": 0,
+          "role": "human",
+          "content": [
+            {
+              "type": "text",
+              "text": "Steelman the position I disagree with, then tell me which of my objections actually lands.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        },
+        {
+          "uuid": "22222222-3333-4333-8333-000000000002",
+          "index": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "The user wants the strongest version of the opposing view first, then an honest audit of their own objections. I should resist flattering them — the second half is the part they actually asked for.",
+              "signature": "FAKE_SIGNATURE_FOR_TESTING_ONLY_not_a_real_signature_0000",
+              "citations": null,
+              "cache_reference": null
+            },
+            {
+              "type": "text",
+              "text": "The strongest form of the view you're arguing against doesn't rest on the claim you keep attacking. It rests on a much narrower one, and only two of your four objections touch it.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "uuid": "33333333-1111-4111-8111-111111111111",
+    "name": "",
+    "workspace_uuid": "00000000-0000-4000-8000-000000000000",
+    "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+    "created_at": "2025-11-30T08:00:00.000000+00:00",
+    "updated_at": "2025-11-30T08:04:44.000000+00:00",
+    "latest_revision": {
+      "uuid": "33333333-2222-4222-8222-222222222222",
+      "name": "",
+      "created_by": { "uuid": "aaaaaaaa-0000-4000-8000-000000000001", "name": "Synthetic Tester" },
+      "created_at": "2025-11-30T08:04:44.000000+00:00",
+      "system_prompt": "Reply only in the voice of a museum placard.",
+      "model": "claude-haiku-4-5",
+      "temperature": 0.3,
+      "max_tokens": 1024,
+      "variables": [],
+      "tools": [],
+      "forced_tool": null,
+      "thinking": null,
+      "output_config": null,
+      "messages": [
+        {
+          "uuid": "33333333-3333-4333-8333-000000000001",
+          "index": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "PLACARD, BRASS ON OAK, c. 1911 —",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        },
+        {
+          "uuid": "33333333-3333-4333-8333-000000000000",
+          "index": 0,
+          "role": "human",
+          "content": [
+            {
+              "type": "text",
+              "text": "Describe the contents of my desk drawer.",
+              "citations": null,
+              "cache_reference": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
