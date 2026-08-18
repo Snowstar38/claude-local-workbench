@@ -223,18 +223,24 @@ body.split #stackedSlot{display:none}
 .field.wide{flex:2.2 1 300px}       /* model picker */
 .field>label{font-size:11.5px; font-weight:650; letter-spacing:.04em;
   text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:6px}
-.field .hint{font-size:11.5px; color:var(--faint); text-transform:none; letter-spacing:0; font-weight:450}
+.field .hint{font-size:11.5px; color:var(--faint); text-transform:none; letter-spacing:0; font-weight:450;
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 select,input[type=text],input[type=number],input[type=password]{
   width:100%; min-width:0; padding:6px 8px; border-radius:8px;
   border:1px solid var(--border-strong); background:var(--bg);
 }
 select{text-overflow:ellipsis}   /* long model ids degrade gracefully */
 select:focus,input:focus,textarea:focus{outline:2px solid var(--accent); outline-offset:-1px}
-/* Slider + number pairs: the number box never shrinks and never gets closer
-   than 12px to the slider, so the thumb can't collide with it at any width. */
-.slider-row{display:flex; align-items:center; gap:12px}
+/* Slider + number pairs. The 12px gap is flex-maintained, so the thumb can't
+   collide with the box at any width. Everything here is allowed to SHRINK —
+   the row, the slider (to 70px), the box (to 64px, which still fits 128000) —
+   because the alternative when a narrow column squeezes the field is the box
+   overflowing the card's right edge, which is worse than a slightly slimmer
+   box. min-width:0 on the row matters: it's a grid item, and its default
+   min-content floor is what used to push the box out of the card. */
+.slider-row{display:flex; align-items:center; gap:12px; min-width:0}
 .slider-row input[type=range]{flex:1 1 80px; min-width:70px; accent-color:var(--accent)}
-.slider-row input[type=number]{flex:0 0 90px; width:90px; text-align:right}
+.slider-row input[type=number]{flex:0 1 90px; width:90px; min-width:64px; text-align:right}
 .disabled-field{opacity:.45; pointer-events:none}
 
 /* System prompt */
@@ -622,7 +628,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 
 /* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
 
-const APP_VERSION = "1.0.6";
+const APP_VERSION = "1.0.7";
 
 /* Format identifier written into backups and the linked save file. The legacy
    id is what pre-release builds wrote; backups carrying it import forever. */

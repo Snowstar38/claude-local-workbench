@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.7 — 2026-08-18
+
+- The max-tokens "4096" number box no longer pokes past the settings card's
+  right edge when both side panels squeeze the middle column: the slider row
+  and the number box can now shrink a little (the box floors at a width that
+  still fits 128000), and field hints ellipsize instead of setting a minimum.
+
 ## 1.0.6 — 2026-08-18
 
 - The cost estimate no longer overflows the top bar's right edge when both
