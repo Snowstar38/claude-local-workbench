@@ -8,6 +8,9 @@ no dependencies, no analytics. Your conversations live in your browser on your
 machine and go nowhere else; the only thing the page ever contacts is
 `api.anthropic.com`, with your own API key.
 
+<img width="4095" height="1783" alt="image" src="https://github.com/user-attachments/assets/adf08dd0-3c45-49ee-a696-7820f33fd41b" />
+
+
 > **Not affiliated with Anthropic.** This is a community tool. It talks to the
 > official Anthropic API using your own key, under Anthropic's documented
 > [direct browser access](https://docs.anthropic.com/) header. "Workbench" here
