@@ -282,10 +282,19 @@ switch it on you.
 | `docs/SPEC.md` | The build spec. |
 | `docs/smoke-results.md` | Evidence for the model-quirk claims above. |
 
-## Contributing / maintaining
+## Contributing, maintaining — and forking!
 
 Start with `AGENTS.md` — it's the orientation document for anyone (human or AI
 agent) touching the code, and it points into `docs/`. The short version: the
 app is one file organised in commented sections, model gating lives in one
 function (`modelCaps()`), prices in one table (`PRICES`), and
 `python tools/verify.py` must pass after every change.
+
+**Please fork this.** It's MIT-licensed on purpose: if you want different
+layouts, another storage scheme, support for other APIs, or something we'd
+never think of — take the file and make it yours. It's one HTML file with no
+build step, which makes it about the easiest thing in the world to fork, and
+`AGENTS.md` was written so an AI assistant can get productive in it in one
+sitting. You don't need permission, and you don't need to upstream anything
+(though PRs are welcome too). The whole point of this project is that your
+conversations and your tools belong to you.

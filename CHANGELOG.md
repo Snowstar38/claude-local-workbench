@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-08-18
+
+- The three header rows (chat list, top bar, versions rail) share one height,
+  so their bottom borders draw a single line across the window and the
+  version-count pill no longer sits higher than the buttons beside it.
+- README now actively encourages forks.
+
 ## 1.0.0 — 2026-08-17
 
 First public release.
