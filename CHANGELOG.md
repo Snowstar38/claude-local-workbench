@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 — 2026-08-18
+
+- Chat-list dates outside the current year now include the year. The list has
+  always been sorted newest-first, but "Nov 30" below "Jan 18" looked broken
+  when they were different years.
+
 ## 1.0.7 — 2026-08-18
 
 - The max-tokens "4096" number box no longer pokes past the settings card's

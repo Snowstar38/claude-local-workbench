@@ -989,6 +989,8 @@ check("empty trailing assistant turn explains prefill (or its absence) in the pl
       "acts as a prefill — the model continues it." in js and
       "this model doesn't accept a trailing assistant message" in js)
 check("no per-message prefill pill remains", "prefill unsupported" not in js)
+check("chat-list dates show the year outside the current one",
+      re.search(r"function fmtRel[^}]+year: d\.getFullYear\(\) === new Date\(\)\.getFullYear\(\) \? undefined : \"numeric\"", js, re.S) is not None)
 check("panel-hide arrows live inside the panels (stationary toggles)",
       'id="hideSidebar"' in html and 'id="hideRail"' in html and
       '$("#hideSidebar").onclick = toggleSidebar;' in js and
