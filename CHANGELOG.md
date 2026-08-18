@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3 — 2026-08-18
+
+- The panel toggles no longer run away from the pointer: each open panel now
+  has its own hide arrow (◂ in the chat list header, ▸ in the versions
+  header) sitting in the same screen corner the top-bar toggle occupies while
+  that panel is closed, so showing and hiding happens in one place.
+
 ## 1.0.2 — 2026-08-18
 
 - Fixed the whole page scrolling (top bar sliding away) on long conversations:

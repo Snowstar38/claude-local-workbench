@@ -382,6 +382,9 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
   <!-- ── Sidebar: chats + data actions ─────────────────────────────────── -->
   <aside id="sidebar">
     <div class="sb-head">
+      <!-- Sits in the same screen corner as ☰ does while the panel is closed,
+           so the show/hide toggle never moves out from under the pointer. -->
+      <button class="btn icon" id="hideSidebar" title="Hide chat list">◂</button>
       <div class="brand"><span class="dot"></span> Workbench</div>
       <button class="btn sm" id="newChat" title="New chat (Ctrl+Shift+N)">＋ New</button>
     </div>
@@ -509,6 +512,8 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
       <span>Versions</span>
       <span class="spacer"></span>
       <span id="verCount" class="pill"></span>
+      <!-- Same corner as ⧉ occupies while the rail is closed — see #hideSidebar. -->
+      <button class="btn icon" id="hideRail" title="Hide versions">▸</button>
     </div>
     <div id="versionList"></div>
   </aside>
@@ -607,7 +612,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 
 /* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
 
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 
 /* Format identifier written into backups and the linked save file. The legacy
    id is what pre-release builds wrote; backups carrying it import forever. */
@@ -2870,16 +2875,20 @@ function wire() {
     ui.noRail !== undefined ? !!ui.noRail : window.innerWidth < SPLIT_MIN_WIDTH);
   // Showing or hiding a side panel changes how much room the editor has, so the
   // layout mode is re-evaluated each time (see availableMainWidth).
-  $("#toggleSidebar").onclick = () => {
+  const toggleSidebar = () => {
     document.body.classList.toggle("no-sidebar");
     prefs.ui = { ...prefs.ui, noSidebar: document.body.classList.contains("no-sidebar") };
     applyLayout();
   };
-  $("#toggleRail").onclick = () => {
+  const toggleRail = () => {
     document.body.classList.toggle("no-rail");
     prefs.ui = { ...prefs.ui, noRail: document.body.classList.contains("no-rail") };
     applyLayout();
   };
+  $("#toggleSidebar").onclick = toggleSidebar;
+  $("#hideSidebar").onclick = toggleSidebar;
+  $("#toggleRail").onclick = toggleRail;
+  $("#hideRail").onclick = toggleRail;
   $("#toggleLayout").onclick = () => {
     // First click also *fixes* the choice: from here on, width no longer decides.
     prefs.layout = currentLayout() === "split" ? "stacked" : "split";

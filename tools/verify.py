@@ -978,6 +978,12 @@ print("\nM. consolidated settings + ephemeral key")
 
 check("gear opens Settings from the top bar",
       'id="topSettingsBtn"' in html and '$("#topSettingsBtn").onclick = openSettings;' in js)
+check("panel-hide arrows live inside the panels (stationary toggles)",
+      'id="hideSidebar"' in html and 'id="hideRail"' in html and
+      '$("#hideSidebar").onclick = toggleSidebar;' in js and
+      '$("#hideRail").onclick = toggleRail;' in js and
+      '$("#toggleSidebar").onclick = toggleSidebar;' in js and
+      '$("#toggleRail").onclick = toggleRail;' in js)
 check("page never scrolls — panes own all scrolling",
       "grid-template-rows:minmax(0,1fr)" in html and
       re.search(r"body\{[^}]*overflow:hidden", html) is not None and
