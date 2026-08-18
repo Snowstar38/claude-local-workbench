@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6 — 2026-08-18
+
+- The cost estimate no longer overflows the top bar's right edge when both
+  side panels are open in split view: the run controls block was missing
+  `min-width:0`, so it refused to shrink and the estimate couldn't ellipsize.
+
 ## 1.0.5 — 2026-08-18
 
 - Prefill indicators now work without hover (so, on phones): the model picker
