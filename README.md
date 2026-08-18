@@ -1,7 +1,7 @@
 # claude-local-workbench
 
-A local replacement for the retired Anthropic Workbench, with the one thing it
-never had: **every Run is saved as a version you can go back to.**
+A local replacement for the retired Anthropic Workbench, with the one thing the
+new version lacks: **every Run is saved as a version you can go back to.**
 
 Everything is one file — `workbench.html`. No install, no build step, no server,
 no dependencies, no analytics. Your conversations live in your browser on your
