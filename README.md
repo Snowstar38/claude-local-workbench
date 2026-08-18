@@ -204,9 +204,10 @@ gates them for you — this is just so nothing surprises you.
 **Prefill** (putting text in a trailing *assistant* message so the model
 continues it) still works on Claude 3-era, 4.5-era, and Haiku 4.5 models. It
 returns an error on Opus/Sonnet 4.6, 4.7, 4.8, Sonnet 5, Opus 5, and Fable 5 —
-those need the conversation to end with a user turn. When your last message is
-an assistant turn, the message shows a `prefill` tag, and the run bar warns you
-in advance if the current model will reject it. You can still press Run; the
+those need the conversation to end with a user turn. The model picker says
+**supports prefill** next to any model that accepts it (no note means it
+doesn't), and an empty trailing assistant turn explains the mechanic right in
+its placeholder text. You can always press Run; if the model refuses, the
 error comes back verbatim.
 
 The response to a prefill contains only the *continuation*. The completion pane

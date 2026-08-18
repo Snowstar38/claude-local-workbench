@@ -978,12 +978,17 @@ print("\nM. consolidated settings + ephemeral key")
 
 check("gear opens Settings from the top bar",
       'id="topSettingsBtn"' in html and '$("#topSettingsBtn").onclick = openSettings;' in js)
-check("run-bar status is a compact chip with the sentence in the tooltip",
-      '#runbar .note.chip{' in css.replace(" ", "").replace("\n", "") or "#runbar .note.chip{" in html)
-check("chip states cover prefill, blocked prefill, and unsaved",
-      '"prefill ✗"' in js and '"prefill", "Trailing assistant turn' in js and
+check("run-bar note is only unsaved/streaming — prefill state lives elsewhere",
       '"unsaved", "Unsaved changes' in js and
-      "This model rejects prefill" in js)
+      "Trailing assistant turn will be sent" not in js and
+      '"prefill ✗"' not in js)
+check("model picker states prefill support in visible text",
+      'id="modelHint"' in html and
+      '$("#modelHint").textContent = caps.prefill ? "supports prefill" : ""' in js)
+check("empty trailing assistant turn explains prefill (or its absence) in the placeholder",
+      "acts as a prefill — the model continues it." in js and
+      "this model doesn't accept a trailing assistant message" in js)
+check("no per-message prefill pill remains", "prefill unsupported" not in js)
 check("panel-hide arrows live inside the panels (stationary toggles)",
       'id="hideSidebar"' in html and 'id="hideRail"' in html and
       '$("#hideSidebar").onclick = toggleSidebar;' in js and

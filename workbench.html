@@ -429,6 +429,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
             <div class="field wide">
               <label for="modelSel">Model
                 <button class="btn icon sm" id="refreshModels" title="Reload the model list from the API">⟳</button>
+                <span class="hint" id="modelHint"></span>
               </label>
               <select id="modelSel"></select>
             </div>
@@ -617,7 +618,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 
 /* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
 
-const APP_VERSION = "1.0.4";
+const APP_VERSION = "1.0.5";
 
 /* Format identifier written into backups and the linked save file. The legacy
    id is what pre-release builds wrote; backups carrying it import forever. */
@@ -1771,6 +1772,10 @@ function renderSettingsBar() {
   sel.append(el("option", { value: CUSTOM_MODEL_OPTION }, "Custom model id…"));
   sel.value = s.model;
 
+  // Prefill capability is stated positively, in visible text — tooltips don't
+  // exist on touch screens. Absence of the note means no prefill here.
+  $("#modelHint").textContent = caps.prefill ? "supports prefill" : "";
+
   // Max tokens
   $("#maxTokRange").value = mtToSlider(s.maxTokens);
   $("#maxTokNum").value = s.maxTokens;
@@ -1835,9 +1840,14 @@ function renderMessages() {
       // Chrome's enhanced spell check uploads text to Google; people paste
       // sensitive prompts here, so don't invite that.
       spellcheck: "false",
+      // Empty turns explain the prefill mechanic in visible text — the only
+      // indicator that works on touch screens (no hover, no tooltips).
       placeholder: m.role === "user" ? "Your turn…"
-        : (isLast ? "Assistant text here acts as a prefill — the model continues it."
-                  : "Assistant turn…"),
+        : (isLast
+            ? (caps.prefill
+                ? "Assistant text here acts as a prefill — the model continues it."
+                : "Assistant turn… (this model doesn't accept a trailing assistant message — end with a user turn before running)")
+            : "Assistant turn…"),
       oninput: (e) => {
         // Keep any thinking blocks, replace the text portion.
         m.content = [...thinkingOf(m), { type: "text", text: e.target.value }];
@@ -1855,13 +1865,6 @@ function renderMessages() {
             onclick: () => setRole("user") }),
           el("button", { class: m.role === "assistant" ? "on" : "", text: "Assistant",
             onclick: () => setRole("assistant") })),
-        (isLast && m.role === "assistant" && textOf(m).trim())
-          ? el("span", { class: "pill" + (caps.prefill ? "" : " warn"),
-              title: caps.prefill
-                ? "This trailing assistant turn is sent as a prefill; the model continues it."
-                : "This model returns 400 for prefill. Run will fail until you remove or reroll this turn." },
-              caps.prefill ? "prefill" : "prefill unsupported")
-          : null,
         el("span", { class: "spacer" }),
         think.length ? el("span", { class: "tag", text: think.length + " thinking block" + (think.length > 1 ? "s" : "") }) : null,
         el("button", { class: "btn icon sm", title: "Insert a message below", text: "＋",
@@ -2045,16 +2048,11 @@ function renderRunbar() {
   if (!state.chat) { setNote(""); return; }
   if (state.running) { setNote("streaming…"); return; }
 
+  // Prefill state is shown where it happens — the model picker's "supports
+  // prefill" note and the empty-turn placeholders — not as a bar ornament.
   const d = state.chat.currentDraft;
-  const caps = modelCaps(d.settings.model);
-  const pf = prefillText(d);
   const hasText = d.messages.some(m => textOf(m).trim());
-  if (pf && !caps.prefill) {
-    setNote("prefill ✗",
-      "This model rejects prefill — it needs the conversation to end with a user message.", true);
-  } else if (pf) {
-    setNote("prefill", "Trailing assistant turn will be sent as a prefill.");
-  } else if (hasText && draftIsDirty()) {
+  if (hasText && draftIsDirty()) {
     setNote("unsaved", "Unsaved changes — Run (or Save version) snapshots them.");
   } else {
     setNote("");

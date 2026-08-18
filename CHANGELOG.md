@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5 — 2026-08-18
+
+- Prefill indicators now work without hover (so, on phones): the model picker
+  says "supports prefill" in plain text next to any model that accepts it, and
+  an empty trailing assistant turn explains the mechanic — or the model's
+  refusal of it — in its placeholder. The run-bar chip and the per-message
+  prefill pill are gone; the run bar now only reports `unsaved` and streaming.
+
 ## 1.0.4 — 2026-08-18
 
 - The run-bar status ("Trailing assistant turn will be sent as a prefill",
