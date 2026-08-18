@@ -989,6 +989,18 @@ check("empty trailing assistant turn explains prefill (or its absence) in the pl
       "acts as a prefill — the model continues it." in js and
       "this model doesn't accept a trailing assistant message" in js)
 check("no per-message prefill pill remains", "prefill unsupported" not in js)
+check("chat row offers one ⋯ menu with duplicate/rename/delete",
+      'text: "⋯"' in js and 'openChatMenu(e.currentTarget, c)' in js and
+      '"Duplicate"' in js and '"Rename…"' in js and '"Delete…"' in js and
+      'title: "Delete", text: "\U0001f5d1"' not in js)
+check("duplicate copies the draft and re-ids the full version history",
+      "async function duplicateChat" in js and
+      "({ ...clone(v), id: uid(), chatId: copy.id })" in js and
+      "currentDraft: clone(c.currentDraft)" in js)
+check("chat menu dismisses on click-away, Esc, scroll, and resize",
+      'closeChatMenu();' in js and
+      '$("#chatList").addEventListener("scroll", closeChatMenu)' in js and
+      'window.addEventListener("resize", closeChatMenu)' in js)
 check("chat-list dates show the year outside the current one",
       re.search(r"function fmtRel[^}]+year: d\.getFullYear\(\) === new Date\(\)\.getFullYear\(\) \? undefined : \"numeric\"", js, re.S) is not None)
 check("panel-hide arrows live inside the panels (stationary toggles)",

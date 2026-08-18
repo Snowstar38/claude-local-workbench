@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.9 — 2026-08-18
+
+- Chat rows now show a single ⋯ menu on hover offering Duplicate, Rename, and
+  Delete (replacing the separate rename/delete icons). Duplicate copies the
+  draft and the chat's entire version history.
+
 ## 1.0.8 — 2026-08-18
 
 - Chat-list dates outside the current year now include the year. The list has

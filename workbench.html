@@ -151,6 +151,20 @@ body.no-sidebar #sidebar,body.no-rail #rail{display:none}
 .chat-item .ci-meta{font-size:11.5px; color:var(--faint); margin-top:1px}
 .chat-item .ci-acts{display:none; gap:2px}
 .chat-item:hover .ci-acts,.chat-item.active .ci-acts{display:flex}
+/* The per-chat ⋯ menu. Fixed-positioned at the button, so the sidebar's
+   overflow:hidden can't clip it. */
+#chatMenu{
+  position:fixed; z-index:60; min-width:132px; padding:4px;
+  background:var(--panel); border:1px solid var(--border-strong);
+  border-radius:9px; box-shadow:var(--shadow); display:grid; gap:1px;
+}
+#chatMenu button{
+  text-align:left; padding:6px 10px; border:0; border-radius:6px;
+  background:transparent; cursor:pointer; font-size:13px; color:var(--text);
+}
+#chatMenu button:hover{background:var(--panel-2)}
+#chatMenu button.danger{color:var(--danger)}
+#chatMenu button.danger:hover{background:var(--danger-soft)}
 .sb-foot{padding:8px; border-top:1px solid var(--border); display:grid; gap:6px}
 .sync-state{font-size:11.5px; color:var(--faint); padding:1px 3px; cursor:pointer;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -536,6 +550,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 </div>
 
 <div id="banners"></div>
+<div id="chatMenu" hidden></div>
 <div id="dropzone"><div class="inner">Drop <code>prompts.json</code>, an export <code>.zip</code>,<br>or a Workbench backup</div></div>
 
 <!-- ── Settings dialog ─────────────────────────────────────────────────── -->
@@ -628,7 +643,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 
 /* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
 
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.0.9";
 
 /* Format identifier written into backups and the linked save file. The legacy
    id is what pre-release builds wrote; backups carrying it import forever. */
@@ -1715,11 +1730,55 @@ function renderChatList() {
         el("div", { class: "ci-name", text: c.name || "Untitled chat" }),
         el("div", { class: "ci-meta", text: fmtRel(c.updatedAt) })),
       el("div", { class: "ci-acts" },
-        el("button", { class: "btn icon sm", title: "Rename", text: "✎",
-          onclick: () => renameChat(c) }),
-        el("button", { class: "btn icon sm", title: "Delete", text: "🗑",
-          onclick: () => deleteChat(c) }))));
+        el("button", { class: "btn icon sm", title: "Duplicate, rename, or delete", text: "⋯",
+          onclick: (e) => openChatMenu(e.currentTarget, c) }))));
   }
+}
+
+function closeChatMenu() {
+  const m = $("#chatMenu");
+  m.hidden = true;
+  m.textContent = "";
+}
+
+function openChatMenu(anchor, c) {
+  const m = $("#chatMenu");
+  closeChatMenu();
+  m.append(
+    el("button", { text: "Duplicate", onclick: () => { closeChatMenu(); duplicateChat(c); } }),
+    el("button", { text: "Rename…", onclick: () => { closeChatMenu(); renameChat(c); } }),
+    el("button", { class: "danger", text: "Delete…", onclick: () => { closeChatMenu(); deleteChat(c); } }));
+  m.hidden = false;
+  // Position after unhiding, so the menu's real size is measurable; flip
+  // above the button when there's no room below.
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
+  m.style.top = (r.bottom + 4 + m.offsetHeight > window.innerHeight
+    ? r.top - m.offsetHeight - 4 : r.bottom + 4) + "px";
+}
+
+/** Copy a chat — draft and full version history — as a new chat. */
+async function duplicateChat(c) {
+  const now = Date.now();
+  const copy = {
+    id: uid(),
+    name: (c.name || "Untitled chat") + " (copy)",
+    createdAt: now, updatedAt: now,
+    // No sourceUuid on the copy: the original keeps claiming the import.
+    currentDraft: clone(c.currentDraft),
+  };
+  const versions = (await dbVersionsFor(c.id))
+    .map(v => ({ ...clone(v), id: uid(), chatId: copy.id }));
+  await txn(["chats", "versions"], "readwrite", (s) => {
+    s.chats.put(copy);
+    for (const v of versions) s.versions.put(v);
+  });
+  afterMutation();
+  state.chats.push(copy);
+  await openChat(copy.id);
+  renderChatList();
+  showOk("Chat duplicated",
+    versions.length ? `${versions.length} version${versions.length === 1 ? "" : "s"} copied with it.` : "");
 }
 
 async function renameChat(c) {
@@ -2919,6 +2978,14 @@ function wire() {
   }, 200));
 
   // Chats
+  // The ⋯ menu dismisses on click-away, Esc, or the list scrolling under it.
+  window.addEventListener("pointerdown", (e) => {
+    if (!$("#chatMenu").hidden && !e.target.closest("#chatMenu")) closeChatMenu();
+  }, true);
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeChatMenu(); });
+  $("#chatList").addEventListener("scroll", closeChatMenu);
+  window.addEventListener("resize", closeChatMenu);
+
   $("#newChat").onclick = createChat;
   $("#chatTitle").oninput = (e) => {
     if (!state.chat) return;
