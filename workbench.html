@@ -187,11 +187,10 @@ body.split #runbar .note{order:-1; max-width:min(26vw,300px);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 body.split #runbar .btn{flex:0 0 auto}
 body.split #runbar .est{min-width:0; overflow:hidden; text-overflow:ellipsis}
-/* On a laptop-width window the top bar is tight, so the two most recoverable
-   things yield: the hint (which also appears on the message itself) and Save
-   version (Run snapshots anyway). The cost estimate stays. */
+/* On a laptop-width window the top bar is tight, so the most recoverable
+   thing yields: Save version (Run snapshots anyway). The cost estimate and
+   the status chip stay — the chip is short enough to keep everywhere. */
 @media (max-width:1240px){
-  body.split #runbar .note{display:none}
   body.split #saveVersion{display:none}
 }
 body.split #stackedSlot{display:none}
@@ -280,6 +279,12 @@ textarea{
 #runbar .spacer{flex:1}
 #runbar .note{font-size:12px; color:var(--muted)}
 #runbar .note.warn{color:var(--danger)}
+/* Chip form: a short label with the explanation in its tooltip. */
+#runbar .note.chip{
+  font-size:11.5px; padding:1px 8px; border-radius:999px; cursor:help;
+  border:1px solid var(--border); background:var(--panel-2); white-space:nowrap;
+}
+#runbar .note.chip.warn{background:var(--danger-soft); border-color:var(--danger)}
 #runbar .est{white-space:nowrap; font-variant-numeric:tabular-nums; cursor:help}
 #runbar .est:empty{display:none}
 
@@ -612,7 +617,7 @@ code{font-family:var(--mono); font-size:.92em; background:var(--panel-2);
 
 /* ─── 1. Helpers ─────────────────────────────────────────────────────────── */
 
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.4";
 
 /* Format identifier written into backups and the linked save file. The legacy
    id is what pre-release builds wrote; backups carrying it import forever. */
@@ -2029,15 +2034,14 @@ function renderRunbar() {
   $("#runBtn").disabled = !state.chat;
   $("#saveVersion").disabled = !state.chat || state.running;
 
-  // The note is ellipsised (and hidden outright on a narrow top bar), so the
-  // full text always lives in the tooltip too.
+  // Status shows as a compact chip — a short label that fits beside the cost
+  // estimate even on a phone — with the full sentence in the tooltip.
   const note = $("#runNote");
-  const setNote = (text, warn) => {
-    note.textContent = text;
-    note.title = text;
-    note.className = warn ? "note warn" : "note";
+  const setNote = (short, full, warn) => {
+    note.textContent = short;
+    note.title = full || short;
+    note.className = "note" + (short && full ? " chip" : "") + (warn ? " warn" : "");
   };
-  note.className = "note";
   if (!state.chat) { setNote(""); return; }
   if (state.running) { setNote("streaming…"); return; }
 
@@ -2046,11 +2050,12 @@ function renderRunbar() {
   const pf = prefillText(d);
   const hasText = d.messages.some(m => textOf(m).trim());
   if (pf && !caps.prefill) {
-    setNote("This model rejects prefill — it needs the conversation to end with a user message.", true);
+    setNote("prefill ✗",
+      "This model rejects prefill — it needs the conversation to end with a user message.", true);
   } else if (pf) {
-    setNote("Trailing assistant turn will be sent as a prefill.");
+    setNote("prefill", "Trailing assistant turn will be sent as a prefill.");
   } else if (hasText && draftIsDirty()) {
-    setNote("Unsaved changes — Run (or Save version) snapshots them.");
+    setNote("unsaved", "Unsaved changes — Run (or Save version) snapshots them.");
   } else {
     setNote("");
   }

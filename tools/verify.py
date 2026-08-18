@@ -978,6 +978,12 @@ print("\nM. consolidated settings + ephemeral key")
 
 check("gear opens Settings from the top bar",
       'id="topSettingsBtn"' in html and '$("#topSettingsBtn").onclick = openSettings;' in js)
+check("run-bar status is a compact chip with the sentence in the tooltip",
+      '#runbar .note.chip{' in css.replace(" ", "").replace("\n", "") or "#runbar .note.chip{" in html)
+check("chip states cover prefill, blocked prefill, and unsaved",
+      '"prefill ✗"' in js and '"prefill", "Trailing assistant turn' in js and
+      '"unsaved", "Unsaved changes' in js and
+      "This model rejects prefill" in js)
 check("panel-hide arrows live inside the panels (stationary toggles)",
       'id="hideSidebar"' in html and 'id="hideRail"' in html and
       '$("#hideSidebar").onclick = toggleSidebar;' in js and

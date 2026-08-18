@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.4 — 2026-08-18
+
+- The run-bar status ("Trailing assistant turn will be sent as a prefill",
+  the rejects-prefill warning, unsaved changes) is now a compact chip —
+  `prefill`, `prefill ✗`, `unsaved` — with the full sentence in its tooltip.
+  Small enough that narrow windows keep it instead of hiding it.
+
 ## 1.0.3 — 2026-08-18
 
 - The panel toggles no longer run away from the pointer: each open panel now
