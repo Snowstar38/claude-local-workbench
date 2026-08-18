@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2 — 2026-08-18
+
+- Fixed the whole page scrolling (top bar sliding away) on long conversations:
+  the app grid's row was sized to content instead of the viewport, so the
+  conversation pane never scrolled internally as designed.
+
 ## 1.0.1 — 2026-08-18
 
 - The three header rows (chat list, top bar, versions rail) share one height,

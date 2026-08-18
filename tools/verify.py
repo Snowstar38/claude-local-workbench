@@ -978,6 +978,10 @@ print("\nM. consolidated settings + ephemeral key")
 
 check("gear opens Settings from the top bar",
       'id="topSettingsBtn"' in html and '$("#topSettingsBtn").onclick = openSettings;' in js)
+check("page never scrolls — panes own all scrolling",
+      "grid-template-rows:minmax(0,1fr)" in html and
+      re.search(r"body\{[^}]*overflow:hidden", html) is not None and
+      re.search(r"#main\{[^}]*min-height:0", html) is not None)
 check("backup and restore reachable from the Settings dialog",
       'id="exportAllDlg"' in html and 'id="restoreAllDlg"' in html and
       '$("#exportAllDlg").onclick = exportAll;' in js and
